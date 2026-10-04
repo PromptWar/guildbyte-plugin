@@ -1,0 +1,45 @@
+.claude-plugin/marketplace.json
+  s_113c423c1030ff::t_968178595fd054 1-13
+.gitignore
+  s_113c423c1030ff::t_db28519e694f4e 1-11
+README.md
+  s_113c423c1030ff::t_d062a06245c3a8 1-13
+mods/guildbyte/.claude-plugin/plugin.json
+  s_113c423c1030ff::t_65f78df038c36e 1-11
+mods/guildbyte/README.md
+  s_113c423c1030ff::t_da8be39c2b1383 1-58
+mods/guildbyte/hooks/hooks.json
+  s_113c423c1030ff::t_c018b9a6c691a4 1
+mods/guildbyte/hooks/register.mjs
+  s_113c423c1030ff::t_521feaf9d33310 1-208
+mods/guildbyte/scripts/companion-animation.mjs
+  s_113c423c1030ff::t_f14f6b90a9c7a3 1-77
+mods/guildbyte/scripts/worker.mjs
+  s_113c423c1030ff::t_a84901ca585674 1-416
+mods/guildbyte/tests/companion-animation.test.mjs
+  s_113c423c1030ff::t_7b983b78c1e00f 1-20
+mods/guildbyte/tests/companion-motion.test.mjs
+  s_113c423c1030ff::t_f162b91e48601d 1-139
+mods/guildbyte/tests/ui.test.ts
+  s_113c423c1030ff::t_e24027526ed56d 1-48
+mods/guildbyte/tests/worker.test.mjs
+  s_113c423c1030ff::t_99e1ad3aff8338 1-180
+mods/guildbyte/types/index.d.ts
+  s_113c423c1030ff::t_ed5ee113d569b7 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ae28ef3f3afae389630f5d99a3b836bf640ae541",
+  "prompts": {},
+  "sessions": {
+    "s_113c423c1030ff": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    }
+  }
+}
