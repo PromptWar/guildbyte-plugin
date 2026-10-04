@@ -157,6 +157,17 @@ try {
   await tick(295401)
   await tick(295461)
   assert.notEqual(values.get('motion'),beforePaint,'A denied blit falls back to ordinary rendering')
+  await hooks.get('command.run:guildbyte-idle')($,{})
+  for(let i=0;i<60;i++)await tick(now+250)
+  // Repeating a finished one-shot must restart at frame zero via the real command hook.
+  await hooks.get('command.run:guildbyte-kiss')($,{})
+  assert.equal(values.get('motion').frame,0)
+  const kissStarted=now
+  await tick(kissStarted+100);assert.equal(values.get('motion').frame,13)
+  await tick(kissStarted+500);assert.equal(values.get('motion').frame,0)
+  await hooks.get('command.run:guildbyte-kiss')($,{})
+  await tick(kissStarted+600)
+  assert.equal(values.get('motion').frame,13,'Rerunning /guildbyte-kiss must replay from the beginning')
   await hooks.get('session.end')($,{},next)
   assert(timers.every(t=>t.cancelled),'Ending the session cancels both timers')
   assert(!JSON.stringify(requests).includes('private'),'Typing and thinking contents never enter the sync worker')
