@@ -1,0 +1,11 @@
+{
+  "name": "guildbyte",
+  "version": "0.2.3",
+  "description": "A pixel-art companion, Claude account pairing, and content-free activity sync for Guildbyte.",
+  "author": { "name": "Guildbyte" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "appUrl": { "type": "string", "title": "Guildbyte app URL", "description": "Your Guildbyte deployment. HTTPS is required except on localhost.", "default": "http://localhost:3000" },
+    "importHistory": { "type": "boolean", "title": "Import local history", "description": "Import numeric activity from local Claude transcripts, without uploading their contents. Historical activity is excluded from duels.", "default": true }
+  }
+}

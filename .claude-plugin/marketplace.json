@@ -1,0 +1,13 @@
+{
+  "name": "guildbyte",
+  "owner": {
+    "name": "Guildbyte"
+  },
+  "plugins": [
+    {
+      "name": "guildbyte",
+      "source": "./mods/guildbyte",
+      "description": "Pixel-art companion, Claude account linking, and numeric activity sync."
+    }
+  ]
+}
