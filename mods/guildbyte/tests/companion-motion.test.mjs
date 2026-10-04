@@ -56,7 +56,7 @@ try {
   register((event,matcher,hook)=>{if(typeof matcher==='function'){hook=matcher;matcher={}}hooks.set(event+(matcher.command ? ':'+matcher.command : ''),hook)})
   const next=async e=>e
   await hooks.get('session.start')($,{},next)
-  const tick=async at=>{now=at;timers.find(t=>t.ms===120).fn();await Promise.resolve()}
+  const tick=async at=>{now=at;timers.find(t=>t.ms===50).fn();await Promise.resolve()}
   await tick(90000)
   assert.equal(values.get('motion').state,'sleep')
   const beforeRequests=requests.length
@@ -143,6 +143,20 @@ try {
   await tick(295241)
   assert.equal(values.get('motion').visit,undefined,'Heartbeat refresh must not restart a completed visit')
   assert.equal(await hooks.get('ui.render')($,{props:{hasSurvey:true}},next).then(e=>e.props.hasSurvey),true)
+  const blits=[]
+  $.ui.blit=async args=>{blits.push(args);return {}}
+  await hooks.get('command.run:guildbyte-walk')($)
+  await hooks.get('ui.render')($,{requestId:'band',props:{bodyColumns:120,maxRows:4}},next)
+  const beforePaint=values.get('motion')
+  await tick(295361)
+  assert.equal(blits.at(-1)?.key,'companion','Frames replace the mounted keyed image in place')
+  assert.equal(values.get('motion'),beforePaint,'Frame-only updates must not redraw the whole band')
+  const latest=await hooks.get('ui.render')($,{requestId:'band',props:{bodyColumns:120,maxRows:4}},next)
+  assert.equal(latest.props.children[0].props.children[0].props.source.png,blits.at(-1).source.png,'Other redraws retain the latest painted frame')
+  $.ui.blit=async()=>({deny:'Image unavailable'})
+  await tick(295401)
+  await tick(295461)
+  assert.notEqual(values.get('motion'),beforePaint,'A denied blit falls back to ordinary rendering')
   await hooks.get('session.end')($,{},next)
   assert(timers.every(t=>t.cancelled),'Ending the session cancels both timers')
   assert(!JSON.stringify(requests).includes('private'),'Typing and thinking contents never enter the sync worker')

@@ -4,6 +4,10 @@ import { COMPANION_STATES, validateAnimation, companionFrame, visitPose } from '
 const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
 const valid={version:1,frames:Array(20).fill(png),clips:Object.fromEntries(COMPANION_STATES.map(state=>[state,{frames:[0,1,2],durations:[100,200,100]}]))}
 assert(validateAnimation(valid))
+const extended={...valid,frames:Array(28).fill(png),clips:{...valid.clips,walk:{frames:[20,21,22,23,24,25,26,27],durations:Array(8).fill(100)}},mirroredFrames:{27:png}}
+assert(validateAnimation(extended),'Dedicated eight-frame walks are accepted')
+assert.equal(validateAnimation({...extended,frames:Array(29).fill(png)}),null)
+assert.equal(validateAnimation({...valid,mirroredFrames:{27:png}}),null)
 assert.deepEqual(validateAnimation({...valid,mirroredFrames:{2:png}})?.mirroredFrames,{2:png})
 assert.equal(validateAnimation({...valid,mirroredFrames:{2:'bad'}}),null)
 assert.equal(validateAnimation({...valid,mirroredFrames:{20:png}}),null)

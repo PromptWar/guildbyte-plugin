@@ -12,6 +12,7 @@ let motionTimer
 let companion
 let activity = companionActivity()
 let travelLimit = 12
+let imageSite,currentPose
 let lastPose
 let visitor,visitStarted=0,completedVisits=[]
 let visitorTarget=9,visitorLimit=24
@@ -32,7 +33,24 @@ async function animate($) {
     value.offset=0;value.facing='left'
   }
   const signature=JSON.stringify(value)
-  if(signature!==lastPose) {lastPose=signature;await $.state.set(motionKey,value)}
+  if(signature!==lastPose) {
+    currentPose=value
+    const geometry=JSON.stringify([value.state,value.offset,value.visit?.id,value.visit?.offset])
+    if(imageSite?.geometry===geometry) {
+      const png=(value.facing==='left' ? companion?.mirroredFrames?.[value.frame] : null) ?? companion?.frames[value.frame]
+      try {
+        const updates=png ? [$.ui.blit({requestId:imageSite.id,key:'companion',source:{png}})] : []
+        if(value.visit && visitor) {
+          const guest=visitor.character.animation,pose=value.visit
+          const png=(pose.facing==='left' ? guest.mirroredFrames?.[pose.frame] : null) ?? guest.frames[pose.frame]
+          updates.push($.ui.blit({requestId:imageSite.id,key:'visitor',source:{png}}))
+        }
+        if(updates.length && (await Promise.all(updates)).every(result=>!result.deny)) {lastPose=signature;return}
+      } catch { /* Older surfaces repaint through the normal render path. */ }
+      imageSite=undefined
+    }
+    lastPose=signature;await $.state.set(motionKey,value)
+  }
 }
 
 function stopTimers() {
@@ -81,7 +99,7 @@ export function register(on, configuration = {}) {
   options = configuration
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    activity=companionActivity();lastPose=undefined
+    activity=companionActivity();lastPose=undefined;currentPose=imageSite=undefined
     await $.command.register({ name: 'guildbyte-connect', description: 'Link this Claude account to Guildbyte' })
     await $.command.register({ name: 'guildbyte-sync', description: 'Retry pending activity uploads' })
     await $.command.register({name:'kiss',argumentHint:'<user_name>',description:'Send your character to kiss a player in their active Guildbyte session',immediate:true})
@@ -89,11 +107,11 @@ export function register(on, configuration = {}) {
     await sync($)
     await animate($)
     timer ??= $.clock.every(10000, () => { void sync($) })
-    motionTimer ??= $.clock.every(120, () => { void animate($) })
+    motionTimer ??= $.clock.every(50, () => { void animate($) })
     return result
   })
   on('session.end', async ($, e, next) => {
-    stopTimers()
+    stopTimers();currentPose=imageSite=undefined
     await sync($)
     return next(e)
   })
@@ -181,7 +199,8 @@ export function register(on, configuration = {}) {
     if (e.props.hasSurvey || e.props.maxRows===0) return next(e)
     const { Box, Image, Button,Text } = $.ui.resolve(e)
     const { value: status = {} } = await $.state.get(statusKey)
-    const { value: pose = { frame: 0, offset: 0, facing: 'right', state: 'idle' } } = await $.state.get(motionKey)
+    const { value: savedPose = { frame: 0, offset: 0, facing: 'right', state: 'idle' } } = await $.state.get(motionKey)
+    const pose=currentPose ?? savedPose
     const visit=pose.visit?.id===status.visit?.id ? status.visit : null
     const labelRows=visit && (e.props.maxRows ?? 5)>1 ? 1 : 0
     const rows = Math.max(1, Math.min(4, (e.props.maxRows ?? 5)-labelRows))
@@ -193,16 +212,17 @@ export function register(on, configuration = {}) {
     if (!status.connected && Button) children.push(Button({ label: 'Connect account', onPress: () => { void worker($, 'connect') } }))
     const png = (pose.facing==='left' ? status.character?.animation?.mirroredFrames?.[pose.frame] : null) ?? status.character?.animation?.frames[pose.frame] ?? status.character?.png
     if (Image) {
-      const image=Image({ source: status.connected && png ? { png } : { file: `${$.plugin.root}/assets/mage.png`, format: 'png' }, columns, rows, alt: status.connected && status.character ? `Your Guildbyte character: ${pose.state ?? 'idle'}` : 'Guildbyte pixel-art mage' })
+      const image=Image({ key:'companion', source: status.connected && png ? { png } : { file: `${$.plugin.root}/assets/mage.png`, format: 'png' }, columns, rows, alt: status.connected && status.character ? `Your Guildbyte character: ${pose.state ?? 'idle'}` : 'Guildbyte pixel-art mage' })
       if(!visit || visitorTarget>0)children.push(status.connected ? Box({position:'absolute',right:home+Math.min(travelLimit,pose.offset ?? 0),bottom:0,width:columns,height:rows,children:[image]}) : image)
       if(visit) {
         const arrival=pose.visit,animation=visit.character.animation
         const guestPng=(arrival.facing==='left' ? animation.mirroredFrames?.[arrival.frame] : null) ?? animation.frames[arrival.frame]
         children.push(Box({position:'absolute',right:home+Math.min(visitorLimit,arrival.offset),bottom:0,width:columns,height:rows,
-          children:[Image({source:{png:guestPng},columns,rows,alt:`${visit.name}${visit.guild ? ' from '+visit.guild : ''}: ${arrival.state}`})]}))
+          children:[Image({key:'visitor',source:{png:guestPng},columns,rows,alt:`${visit.name}${visit.guild ? ' from '+visit.guild : ''}: ${arrival.state}`})]}))
         if(Text && labelRows)children.push(Box({position:'absolute',top:0,right:0,width,height:1,children:[Text({children:`${visit.name} · ${visit.guild ? '<'+visit.guild+'>' : 'No guild'}`,wrap:'truncate-end'})]}))
       }
     }
+    imageSite=status.connected && typeof e.requestId==='string' ? {id:e.requestId,geometry:JSON.stringify([pose.state,pose.offset,pose.visit?.id,pose.visit?.offset])} : undefined
     return Box({ width: e.props.bodyColumns, height: rows+labelRows, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'flex-end', gap: 1, paddingRight: 1, children })
   })
 }
