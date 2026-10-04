@@ -41,6 +41,8 @@ Date.now=()=>now
 try {
   const hooks=new Map(),values=new Map(),timers=[],requests=[]
   const clips=Object.fromEntries(['idle','walk','sit','talk','kiss','wave','laugh','angry','victory','sleep'].map((s,i)=>[s,{frames:s==='walk' ? [2,3] : [i],durations:s==='walk' ? [100,100] : [100]}]))
+  clips.sleep={frames:[8,19,19],durations:[300,1500,1600]}
+  clips.kiss={frames:[0,13,14,0],durations:[100,100,100,100]}
   const animation={version:1,frames:Array.from({length:20},(_,i)=>`frame-${i}`),mirroredFrames:{0:'left-0',2:'left-2',3:'left-3',4:'left-4'},clips}
   let incoming=null
   const $={
@@ -94,6 +96,8 @@ try {
   assert.equal(values.get('motion').state,'idle','Final steps finish even without turn.complete')
   await tick(113000);assert.equal(values.get('motion').state,'sit')
   await tick(183000);assert.equal(values.get('motion').state,'sleep')
+  await tick(186400);assert.equal(values.get('motion').frame,19,'Sleep holds the sleeping pose past the full clip')
+  await tick(190000);assert.equal(values.get('motion').frame,19,'Sleep does not return to the sitting frame')
   const subagent=hooks.get('turn.step')($,{turnId:'agent',agentId:'agent',index:0},async function*(){yield thinking;return result})
   await subagent.next();assert.equal(values.get('motion').state,'sleep','Background agents do not wake the companion')
   await subagent.next()
@@ -123,6 +127,13 @@ try {
   assert.equal(values.get('motion').state,'kiss')
   assert.equal(values.get('motion').facing,'left')
   assert.equal(values.get('motion').visit.facing,'right')
+  assert.equal(values.get('motion').frame,13)
+  assert.equal(values.get('motion').visit.frame,13,'Both kisses start together after arrival')
+  for(const at of [289000,290000,292000]) {
+    await tick(at)
+    assert.equal(values.get('motion').frame,0,'Resident kiss ends at neutral without replay')
+    assert.equal(values.get('motion').visit.frame,0,'Visitor kiss ends at neutral without replay')
+  }
   await tick(293620)
   assert.equal(values.get('motion').visit.state,'walk');assert.equal(values.get('motion').visit.facing,'left')
   await tick(295121)

@@ -62,7 +62,8 @@ export function companionActivity(now = Date.now()) {
 export function companionFrame(animation,state,elapsed) {
   const clip=animation?.clips[state] ?? animation?.clips.idle
   if(!clip) return 0
-  let time=Math.max(0,elapsed)%clip.durations.reduce((a,b)=>a+b,0)
+  const duration=clip.durations.reduce((a,b)=>a+b,0)
+  let time=state==='sleep' || state==='kiss' ? Math.min(Math.max(0,elapsed),duration-1) : Math.max(0,elapsed)%duration
   for(let i=0;i<clip.frames.length;i++) { if(time<clip.durations[i])return clip.frames[i];time-=clip.durations[i] }
   return clip.frames[0]
 }
@@ -72,6 +73,6 @@ export function visitPose(animation,elapsed,target,limit) {
   const state=arriving || leaving ? 'walk' : 'kiss'
   const far=Math.max(target,Math.min(limit,target+12))
   const progress=arriving ? Math.max(0,elapsed)/1500 : leaving ? Math.min(1,(elapsed-6500)/1500) : 0
-  return {frame:companionFrame(animation,state,elapsed),state,facing:leaving ? 'left' : 'right',
+  return {frame:companionFrame(animation,state,state==='kiss' ? elapsed-1500 : elapsed),state,facing:leaving ? 'left' : 'right',
     offset:Math.round(arriving ? far+(target-far)*progress : leaving ? target+(far-target)*progress : target)}
 }

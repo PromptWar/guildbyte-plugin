@@ -1,4 +1,4 @@
-# Guildbyte 0.2.3
+# Guildbyte 0.2.4
 
 A standard Claude Code plugin installs the mod automatically. Its `AbovePrompt` hook displays your pinned animated Guildbyte character, with a Connect account button and fallback mage when the current account is unpaired or disconnected; no separate mod installation is needed. Requirements: Claude Code 2.1.287+ and Node 22.13+ (built-in SQLite). Implementation follows the [Claude mods guide](https://claude.dev/blog/getting-started-with-claude-code-mods/) and the installed runtime's generated types.
 
@@ -7,13 +7,13 @@ A standard Claude Code plugin installs the mod automatically. Its `AbovePrompt` 
 Start the sibling Guildbyte app and apply `db/013_claude_activity.sql` once to its existing database. Then:
 
 ```bash
-claude plugin marketplace add /absolute/path/to/claude-rpg
+claude plugin marketplace add PromptWar/guildbyte-plugin
 claude plugin install guildbyte@guildbyte --scope user --config appUrl=http://localhost:3000 --config importHistory=true
 ```
 
 Run `/reload-plugins` or start a new session, then `/guildbyte-connect`. Sign into Guildbyte in the opened browser and claim the ten-minute code. The mod polls the exchange and begins sending numeric batches. `/guildbyte-sync` retries manually. Sign into another Claude subscription, start a new session, and use `/guildbyte-connect` again to link it to the same Guildbyte user. Manage accounts in `/settings`.
 
-The remote marketplace command becomes available after this repository is published. On older developer builds, function hooks may need `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`; validation and runtime tests here used Claude 2.1.283 with that flag. Terminal/desktop visuals still need a manual live-session check on 2.1.287+.
+On older developer builds, function hooks may need `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`; validation and runtime tests here used Claude 2.1.283 with that flag. Terminal/desktop visuals still need a manual live-session check on 2.1.287+.
 
 ## Sync and reinstall behavior
 
@@ -37,7 +37,7 @@ Limit counters require a real failure: context-window overflow, or a rate-limit 
 
 ## Kiss visits
 
-Use `/kiss <user_name>` with a Guildbyte handle, optionally prefixed by `@`. The app chooses one most recently active linked session of that player. Your pinned character walks into its band, kisses, then leaves after eight seconds; your name and guild appear above the sprites. Both characters face one another. No prompt or message is inserted into the recipient's conversation.
+Use `/kiss <user_name>` with a Guildbyte handle, optionally prefixed by `@`. The app chooses one most recently active linked session of that player. Your pinned character walks into its band, kisses, then leaves after eight seconds; your name and guild appear above the sprites. Both characters face one another and play one synchronized kiss, then hold the final neutral frame until departure. No prompt or message is inserted into the recipient's conversation.
 
 The server permits one incoming and one outgoing kiss per player at a time, enforces a 15-second sender cooldown, and reserves the recipient's slot for at least eight seconds after delivery. Repeated requests are idempotent. A completed visit is acknowledged by the receiving session, and undelivered visits expire after two minutes. Offline, unknown, busy and unpaired players produce a clear command response. Polling can add up to one heartbeat interval of delivery delay. The app requires `db/019_companion_visits.sql` (already applied locally).
 
@@ -45,7 +45,7 @@ Claude owns the `[-]` collapse control of the `AbovePrompt` band. The current ge
 
 ## Checks
 
-The companion accepts validated animation frames from the app's fitted pixel-character collection. It walks while Claude thinks or uses tools, returns to the right-hand home position before talking, sits after 20 seconds of inactivity and sleeps after 90 seconds. Typing wakes it immediately. The sprite is up to four rows by eight columns, one-third larger than before, and shrinks to fit narrow terminals. Manual previews last until typing or a new turn; `/guildbyte-idle` resumes automatic activity. Use `/guildbyte-walk`, `/guildbyte-sit`, `/guildbyte-kiss`, `/guildbyte-wave`, `/guildbyte-laugh`, `/guildbyte-angry`, `/guildbyte-victory`, or `/guildbyte-sleep` to preview a state; `/guildbyte-idle` returns to idle. Older servers retain static PNG display. The app's `/character-lab` previews fitted outfit families, weapon/accessory pairings, fixed sponsor editions and matching head-and-upper-chest portraits. Each item carries rarity; the final character tier comes from its saved item score. Normal recipes are reserved when a chest opens; sponsors stay fixed and ultra rare. The companion uses the same approved animation clips as the app.
+The companion accepts validated animation frames from the app's fitted pixel-character collection. It walks while Claude thinks or uses tools, returns to the right-hand home position before talking, sits after 20 seconds of inactivity and sleeps after 90 seconds. Sleep plays its transition once and holds the sleeping pose until activity resumes. Typing wakes it immediately. The sprite is up to four rows by eight columns, one-third larger than before, and shrinks to fit narrow terminals. Manual previews last until typing or a new turn; `/guildbyte-idle` resumes automatic activity. Use `/guildbyte-walk`, `/guildbyte-sit`, `/guildbyte-kiss`, `/guildbyte-wave`, `/guildbyte-laugh`, `/guildbyte-angry`, `/guildbyte-victory`, or `/guildbyte-sleep` to preview a state; `/guildbyte-idle` returns to idle. Older servers retain static PNG display. The app's `/character-lab` previews fitted outfit families, weapon/accessory pairings, fixed sponsor editions and matching head-and-upper-chest portraits. Each item carries rarity; the final character tier comes from its saved item score. Normal recipes are reserved when a chest opens; sponsors stay fixed and ultra rare. The companion uses the same approved animation clips as the app.
 
 ```bash
 node --no-warnings mods/guildbyte/tests/worker.test.mjs
