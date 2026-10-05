@@ -1,0 +1,72 @@
+mods/guildbyte/tests/companion-motion.test.mjs
+  s_3f50f2d0cedeb1::t_22c42f26f4325c 50-51
+mods/guildbyte/tests/companion-animation.test.mjs
+  s_190ea48f7d4494::t_6e754bee685edd 18-23
+mods/guildbyte/scripts/worker.mjs
+  s_14794bb0fc7789::t_5a41f1ef0c7f21 17-24,50-52,77-79,86,99,113
+  s_5f87bb63c53c53::t_6a71335e456516 114,268,296-299,413
+mods/guildbyte/README.md
+  s_190ea48f7d4494::t_6e754bee685edd 1,22,32,48
+mods/guildbyte/scripts/companion-animation.mjs
+  s_190ea48f7d4494::t_6e754bee685edd 10,12,17,25
+mods/guildbyte/.claude-plugin/plugin.json
+  s_28d3eeffd3230b::t_4b86f57a45f77e 3
+mods/guildbyte/hooks/register.mjs
+  s_5f87bb63c53c53::t_cd06e509b47388 74-86,197-201
+mods/guildbyte/tests/ui-text.test.ts
+  s_5f87bb63c53c53::t_dfe8c97eeda401 1-33
+mods/guildbyte/tests/ui.test.ts
+  s_5f87bb63c53c53::t_fd276052f8edce 6
+mods/guildbyte/tests/worker.test.mjs
+  s_5f87bb63c53c53::t_ca704d5a12f77e 7,97-111,185-191
+mods/guildbyte/types/index.d.ts
+  s_5f87bb63c53c53::t_a9e8cdbadc3819 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dcd8c14c789b9951119202639080344083d805c8",
+  "prompts": {},
+  "sessions": {
+    "s_14794bb0fc7789": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2eacf024-94a5-4108-bb99-c309eb2043b1",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    },
+    "s_190ea48f7d4494": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a107d7-6200-7771-8c5e-6b3132fb16ac",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    },
+    "s_28d3eeffd3230b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ffc7d87-758a-4cca-8e03-8790ce222645",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    },
+    "s_3f50f2d0cedeb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a8f53e5-3a2f-4f4c-818b-b7b3e4765774",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    },
+    "s_5f87bb63c53c53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f12f720-5819-406b-a2cb-8ee51d29317d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    }
+  }
+}
