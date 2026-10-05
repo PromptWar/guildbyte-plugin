@@ -1,0 +1,25 @@
+mods/guildbyte/.claude-plugin/plugin.json
+  s_8f3edf86d6b761::t_dc9e699b684ea4 3
+mods/guildbyte/README.md
+  s_8f3edf86d6b761::t_89d6c3700a00bf 48
+mods/guildbyte/scripts/companion-animation.mjs
+  s_8f3edf86d6b761::t_5a70a95fc76337 40
+mods/guildbyte/tests/companion-motion.test.mjs
+  s_8f3edf86d6b761::t_51b656cbb71b7a 160-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "71a2d2470748bc5c835432cebfb9d226f866fe64",
+  "prompts": {},
+  "sessions": {
+    "s_8f3edf86d6b761": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "unknown"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    }
+  }
+}
