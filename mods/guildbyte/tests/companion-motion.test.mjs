@@ -47,6 +47,8 @@ try {
   let incoming=null
   const $={
     plugin:{root:'/plugin'},session:{id:async()=> 'session',usage:async()=>({})},
+    // A terminal that shows images, so the sprite path is the one under test (others get a status line).
+    env:{get:async name=>({TERM_PROGRAM:'ghostty'})[name]},
     state:{get:async key=>({value:values.get(key.key)}),set:async (key,value)=>{values.set(key.key,value)}},
     command:{register:async()=>{}},
     process:{run:async (_args,{stdin})=>{const input=JSON.parse(stdin);requests.push(input);if(input.completedVisits?.includes(incoming?.id))incoming=null;return {exitCode:0,stdout:JSON.stringify({connected:true,character:{id:'char',png:'idle-png',animation},visit:incoming,...(input.action==='kiss' ? {kiss:{target:input.target.replace(/^@/,'')}} : {})})}}},

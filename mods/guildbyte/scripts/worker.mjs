@@ -14,6 +14,14 @@ export function stableId(value) {
 const isUuid = value => typeof value === 'string' && /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(value)
 const number = value => Number.isSafeInteger(value) && value >= 0 ? value : 0
 const TOKEN_KEYS = { input_tokens: 'input_tokens', output_tokens: 'output_tokens', cache_read_input_tokens: 'cache_read_tokens', cache_creation_input_tokens: 'cache_write_tokens' }
+// Only the family is stored and uploaded, never the raw model id. Order matters: the first match wins.
+// Claude models only; any other model (OpenAI included) is 'unknown'.
+const FAMILIES = [['fable', /fable/i], ['opus', /opus/i], ['sonnet', /sonnet/i], ['haiku', /haiku/i]]
+export function modelFamily(id) {
+  if (typeof id !== 'string') return 'unknown'
+  for (const [family, pattern] of FAMILIES) if (pattern.test(id)) return family
+  return 'unknown'
+}
 const eventStatements = new WeakMap()
 
 export function appOrigin(value) {
@@ -39,6 +47,9 @@ export function openDatabase(directory) {
       value REAL NOT NULL, resets_at TEXT, kind TEXT NOT NULL, source TEXT NOT NULL, account_id TEXT,
       synced INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS events_pending ON events(synced, account_id, kind);`)
+  // Databases created before model tagging upgrade in place.
+  const columns = db.prepare('PRAGMA table_info(events)').all().map(column => column.name)
+  if (!columns.includes('model')) db.exec('ALTER TABLE events ADD COLUMN model TEXT')
   db.prepare("INSERT OR IGNORE INTO metadata VALUES ('cutoff', ?)").run(new Date().toISOString())
   return db
 }
@@ -63,16 +74,16 @@ export function saveEvent(db, event) {
   if (!event.id || !Number.isFinite(event.value) || event.value < 0) return
   let statement = eventStatements.get(db)
   if (!statement) {
-    statement = db.prepare(`INSERT INTO events (id, session_id, at, key, value, resets_at, kind, source, account_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET value=MAX(events.value, excluded.value),
+    statement = db.prepare(`INSERT INTO events (id, session_id, at, key, value, resets_at, kind, source, account_id, model)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET value=MAX(events.value, excluded.value), model=COALESCE(excluded.model, events.model),
       at=CASE WHEN events.key IN ('input_tokens','output_tokens','cache_read_tokens','cache_write_tokens','model_step_count') THEN MAX(events.at,excluded.at) ELSE events.at END,
       synced=0
     WHERE excluded.value > events.value OR (events.key IN ('input_tokens','output_tokens','cache_read_tokens','cache_write_tokens','model_step_count') AND excluded.at > events.at)`)
     eventStatements.set(db,statement)
   }
   statement.run(event.id, event.sessionId ?? null, event.at, event.key, event.value,
-    event.resetsAt ?? null, event.kind ?? 'counter', event.source ?? 'live', event.accountId ?? null)
+    event.resetsAt ?? null, event.kind ?? 'counter', event.source ?? 'live', event.accountId ?? null, event.model ?? null)
 }
 
 export function ingestRecord(db, record, accountId, importHistory = true) {
@@ -85,7 +96,7 @@ export function ingestRecord(db, record, accountId, importHistory = true) {
   const source = historical ? 'history' : 'live'
   const owner = historical ? null : accountId
   if (!historical && !owner) return // Never assign another running account's activity to this account.
-  const put = (identity, key, value) => saveEvent(db, { id: stableId(identity + ':' + key), sessionId, at, key, value, source, accountId: owner })
+  const put = (identity, key, value, model) => saveEvent(db, { id: stableId(identity + ':' + key), sessionId, at, key, value, source, accountId: owner, ...(model ? { model } : {}) })
   const message = record.message ?? {}
   if (!record.isSidechain && record.type === 'user' && !record.isMeta && !record.isSynthetic && record.uuid) {
     const content = message.content
@@ -99,7 +110,8 @@ export function ingestRecord(db, record, accountId, importHistory = true) {
   }
   if (record.type === 'assistant' && message.id && message.usage) {
     put(`request:${message.id}`, 'model_step_count', 1)
-    for (const [field, key] of Object.entries(TOKEN_KEYS)) put(`request:${message.id}`, key, number(message.usage[field]))
+    const model = modelFamily(message.model)
+    for (const [field, key] of Object.entries(TOKEN_KEYS)) put(`request:${message.id}`, key, number(message.usage[field]), model)
   }
   if (record.type === 'assistant' && Array.isArray(message.content)) {
     for (const block of message.content) if (block.type === 'tool_use' && block.id) {
@@ -253,7 +265,7 @@ export async function upload(db, origin, session) {
     if (!sent.length) continue
     const payload = {
       observations: counters.map(event => ({ id: event.id, sessionId: event.session_id, at: event.at, key: event.key, value: event.value,
-        source: event.source === 'live' && Date.parse(event.at) < Date.now() - 7 * 86400000 ? 'history' : event.source })),
+        source: event.source === 'live' && Date.parse(event.at) < Date.now() - 7 * 86400000 ? 'history' : event.source, ...(event.model ? { model: event.model } : {}) })),
       readings: readings.map(event => ({ id: event.id, at: event.at, key: event.key, value: event.value, resetsAt: event.resets_at })),
     }
     try { await request(origin, '/api/observations', payload, account.token) }
@@ -281,6 +293,10 @@ export function saveCompanion(db, accountId, response) {
   if (response.character === null) { setMeta(db, `character:${accountId}`, 'null'); return }
   const character=validatedCharacter(response.character)
   if(character)setMeta(db,`character:${accountId}`,JSON.stringify(character))
+  const player=response.player
+  if(player===null)setMeta(db,`player:${accountId}`,'null')
+  else if(player && typeof player.handle==='string' && /^[a-z0-9_]{1,40}$/i.test(player.handle) && Number.isSafeInteger(player.points) && player.points>=0)
+    setMeta(db,`player:${accountId}`,JSON.stringify({handle:player.handle,points:player.points}))
 }
 
 export function saveVisit(db,accountId,sessionId,response) {
@@ -394,7 +410,7 @@ function summary(db, account,sessionId) {
   const seen=visit ? JSON.parse(getMeta(db,`visit-seen:${account.id}:${sessionId}`) ?? '[]') : []
   return {
     connected, plan: account?.plan ?? 'Claude',
-    ...(connected ? { character: JSON.parse(getMeta(db, `character:${account.id}`) ?? 'null') } : {}),
+    ...(connected ? { character: JSON.parse(getMeta(db, `character:${account.id}`) ?? 'null'), player: JSON.parse(getMeta(db, `player:${account.id}`) ?? 'null') } : {}),
     visit:visit && Date.parse(visit.expiresAt)>Date.now() && !seen.includes(visit.id) ? visit : null,
     accountCount: db.prepare('SELECT count(*) AS n FROM accounts WHERE token IS NOT NULL').get().n,
     pending: db.prepare('SELECT count(*) AS n FROM events WHERE synced=0').get().n,

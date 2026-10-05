@@ -7,6 +7,7 @@ export type GuildbyteStatus = {
   prompts: number
   historyComplete: boolean
   character?: { id: string; png: string; animation?: { version: 1; frames: string[]; mirroredFrames?: Record<string,string>; clips: Record<string, {frames:number[]; durations:number[]}> } } | null
+  player?: {handle:string;points:number} | null
   linkUrl?: string
   error?: string
   kiss?: {id:string;target:string;expiresAt:string}

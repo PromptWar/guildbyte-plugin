@@ -3,6 +3,7 @@ import { describe, expect, test, mock } from 'claude-code/testing'
 describe('Guildbyte companion', () => {
   test('shows the companion, connection action, and respects surveys', async ($, on) => {
     mock.clock(on)
+    mock.env(on, { TERM_PROGRAM: 'ghostty' })
     on('session.start', ($, e) => ({ cwd: e.cwd }))
     on('session.id', () => ({ value: 'a5928de2-75f4-4e84-bfff-18c392dbaf89' }))
     on('session.usage', () => ({ value: { context: { window: 200000 }, rateLimits: [] } }))

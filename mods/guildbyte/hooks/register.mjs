@@ -89,6 +89,19 @@ async function worker($, action = 'sync', usage,target) {
   }
 }
 
+let pictures
+// Claude Code draws an Image with the kitty graphics protocol only (kitty, Ghostty, not through tmux);
+// any other terminal (Orca, VS Code, Terminal.app) gets the alt text, so those get a status line instead.
+async function showsPictures($) {
+  pictures ??= !(await $.env.get('TMUX')) && ((await $.env.get('TERM'))==='xterm-kitty' || Boolean(await $.env.get('KITTY_WINDOW_ID')) || (await $.env.get('TERM_PROGRAM'))==='ghostty')
+  return pictures
+}
+
+function statusLine(status) {
+  const who=status.player ? `@${status.player.handle} · ${String(status.player.points).replace(/\B(?=(\d{3})+(?!\d))/g,',')} pts` : 'Guildbyte'
+  return `● ${who} · ${status.pending ? `${status.pending} waiting to sync` : 'capturing'}`
+}
+
 async function sync($) {
   let usage
   try { usage = await $.session.usage() } catch { /* A fresh session may have no usage yet. */ }
@@ -199,6 +212,11 @@ export function register(on, configuration = {}) {
     if (e.props.hasSurvey || e.props.maxRows===0) return next(e)
     const { Box, Image, Button,Text } = $.ui.resolve(e)
     const { value: status = {} } = await $.state.get(statusKey)
+    if (!(await showsPictures($))) {
+      const line=status.connected ? Text?.({ children: statusLine(status), dimColor: true, wrap: 'truncate-end' }) : Button?.({ label: 'Connect account', onPress: () => { void worker($, 'connect') } })
+      if (!line) return next(e)
+      return Box({ width: e.props.bodyColumns, height: 1, flexDirection: 'row', justifyContent: 'flex-end', paddingRight: 1, children: [line] })
+    }
     const { value: savedPose = { frame: 0, offset: 0, facing: 'right', state: 'idle' } } = await $.state.get(motionKey)
     const pose=currentPose ?? savedPose
     const visit=pose.visit?.id===status.visit?.id ? status.visit : null

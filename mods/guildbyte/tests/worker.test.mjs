@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { appOrigin, openDatabase, ingestRecord, scanFile, stableId, upload, run, saveFailures, saveCompanion } from '../scripts/worker.mjs'
+import { appOrigin, openDatabase, ingestRecord, scanFile, stableId, upload, run, saveFailures, saveCompanion, modelFamily } from '../scripts/worker.mjs'
 
 const directory = mkdtempSync(join(tmpdir(), 'guildbyte-worker-'))
 const sessionId = randomUUID()
@@ -94,6 +94,21 @@ try {
   const sentCount=batches.length
   await upload(db,origin)
   assert.equal(batches.length,sentCount)
+  // Token observations carry the model family derived from the transcript's model id, never the raw id.
+  for (const [id,family] of [['claude-fable-5-1','fable'],['claude-fable-5-1[1m]','fable'],['fable','fable'],['claude-opus-5-5[1m]','opus'],['claude-opus-4-8','opus'],['opus','opus'],
+    ['claude-sonnet-5','sonnet'],['sonnet','sonnet'],['claude-haiku-4-5-20251001','haiku'],['claude-opus-5-5','opus'],
+    // Claude only: the former OpenAI families now resolve to unknown.
+    ['gpt-5.5-codex','unknown'],['gpt-5.5','unknown'],['astra-1','unknown'],['astra-2','unknown'],['gpt-sol','unknown'],['terra','unknown'],['luna-mini','unknown'],
+    ['<synthetic>','unknown'],['gpt-9-nova','unknown'],[undefined,'unknown'],[42,'unknown']]) assert.equal(modelFamily(id),family,String(id))
+  ingestRecord(db,row('assistant',{id:'msg_model',model:'claude-fable-5-1',usage:{output_tokens:11}},live),accountId)
+  await upload(db,origin)
+  const tagged=batches.flatMap(b=>b.observations).find(o=>o.key==='output_tokens'&&o.value===11)
+  assert.equal(tagged.model,'fable')
+  assert(!JSON.stringify(batches).includes('claude-fable-5-1'),'Raw model ids are never uploaded')
+  assert(batches.flatMap(b=>b.observations).filter(o=>o.key==='model_step_count').every(o=>!('model' in o)),'Only token observations carry a model')
+  ingestRecord(db,row('assistant',{id:'msg_unknown',model:'gpt-9-nova',usage:{output_tokens:13}},live),accountId)
+  await upload(db,origin)
+  assert.equal(batches.flatMap(b=>b.observations).find(o=>o.value===13).model,'unknown')
   // A concurrent session can advance a request timestamp while a batch is in flight.
   const progressive = {...current,timestamp:new Date(Date.now()+200).toISOString()}
   ingestRecord(db,progressive,accountId)
@@ -167,6 +182,13 @@ try {
   assert.equal(kisses.length,1)
   saveCompanion(db,accountId,{character:{id:character.id,png:'invalid'}})
   assert.deepEqual(JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get(`character:${accountId}`).value),character)
+  const playerOf=()=>JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get(`player:${accountId}`)?.value ?? 'undefined')
+  saveCompanion(db,accountId,{player:{handle:'paul_1a2b3c4d',points:1234}})
+  assert.deepEqual(playerOf(),{handle:'paul_1a2b3c4d',points:1234})
+  saveCompanion(db,accountId,{player:{handle:'\u001b[31mevil',points:-1}})
+  assert.deepEqual(playerOf(),{handle:'paul_1a2b3c4d',points:1234},'An invalid player keeps the last good one')
+  saveCompanion(db,accountId,{player:null})
+  assert.equal(playerOf(),null)
   character=null
   db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
   assert.equal((await run({...input,action:'sync'},dependencies)).character,null)
