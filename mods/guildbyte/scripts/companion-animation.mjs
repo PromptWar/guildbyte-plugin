@@ -7,13 +7,14 @@ export function validPng(png) {
 }
 
 export function validateAnimation(value) {
-  if(!value || value.version !== 1 || !Array.isArray(value.frames) || value.frames.length !== 20 ||
+  if(!value || value.version !== 1 || !Array.isArray(value.frames) || value.frames.length<20 || value.frames.length>28 ||
      value.frames.some(png=>!validPng(png)) || value.frames.reduce((n,p)=>n+p.length,0)>512*1024 || !value.clips) return null
+  const frameCount=value.frames.length
   const clips={}
   for(const state of COMPANION_STATES) {
     const clip=value.clips[state]
     if(!clip || !Array.isArray(clip.frames) || !Array.isArray(clip.durations) || !clip.frames.length || clip.frames.length>24 ||
-       clip.frames.length!==clip.durations.length || clip.frames.some(i=>!Number.isInteger(i)||i<0||i>=20) ||
+       clip.frames.length!==clip.durations.length || clip.frames.some(i=>!Number.isInteger(i)||i<0||i>=frameCount) ||
        clip.durations.some(ms=>!Number.isFinite(ms)||ms<60||ms>10000)) return null
     clips[state]={frames:clip.frames,durations:clip.durations}
   }
@@ -21,7 +22,7 @@ export function validateAnimation(value) {
   if(value.mirroredFrames !== undefined) {
     if(!value.mirroredFrames || typeof value.mirroredFrames !== 'object' || Array.isArray(value.mirroredFrames)) return null
     const entries=Object.entries(value.mirroredFrames)
-    if(entries.length>20 || entries.some(([frame,png])=>!/^\d+$/.test(frame) || String(Number(frame))!==frame || Number(frame)>=20 || !validPng(png)) ||
+    if(entries.length>frameCount || entries.some(([frame,png])=>!/^\d+$/.test(frame) || String(Number(frame))!==frame || Number(frame)>=frameCount || !validPng(png)) ||
        entries.reduce((n,[,png])=>n+png.length,0)>512*1024) return null
     mirroredFrames=Object.fromEntries(entries)
   }

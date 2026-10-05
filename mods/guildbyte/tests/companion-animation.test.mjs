@@ -15,6 +15,12 @@ assert.equal(companionFrame(valid,'walk',300),2)
 assert.equal(companionFrame(valid,'walk',400),0)
 assert.equal(validateAnimation({...valid,frames:['bad']}),null)
 assert.equal(validateAnimation({...valid,clips:{...valid.clips,walk:{frames:[20],durations:[100]}}}),null)
+const extended={...valid,frames:Array(28).fill(png),clips:{...valid.clips,walk:{frames:[20,21,22,23,24,25,26,27],durations:Array(8).fill(100)}}}
+assert(validateAnimation(extended),'Eight appended custom walk frames are accepted')
+assert.equal(companionFrame(extended,'walk',700),27)
+assert.deepEqual(validateAnimation({...extended,mirroredFrames:{27:png}})?.mirroredFrames,{27:png})
+assert.equal(validateAnimation({...extended,clips:{...extended.clips,walk:{frames:[28],durations:[100]}}}),null)
+assert.equal(validateAnimation({...extended,frames:Array(29).fill(png)}),null)
 assert.equal(validateAnimation({...valid,clips:{...valid.clips,talk:{frames:[1],durations:[0]}}}),null)
 assert.equal(validateAnimation({...valid,clips:{...valid.clips,sit:{frames:[1,2],durations:[100]}}}),null)
 for (const state of ['sleep','kiss']) {
