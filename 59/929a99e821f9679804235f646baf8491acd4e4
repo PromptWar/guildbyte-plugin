@@ -1,0 +1,48 @@
+mods/guildbyte/scripts/worker.mjs
+  s_c654a00dc6a173::t_61a5ace60f013b 10
+  s_c654a00dc6a173::t_261063b549fc05 229-232,234-237,239-241,246-247
+  s_c654a00dc6a173::t_20c6301968f44a 395
+  s_c654a00dc6a173::t_9ce70b39e9cebb 485
+  s_c654a00dc6a173::t_9e9c6448d22bda 446-451
+mods/guildbyte/hooks/register.mjs
+  s_c654a00dc6a173::t_019456159861e3 3,166,259
+mods/guildbyte/scripts/duel-format.mjs
+  s_c654a00dc6a173::t_dcc2d4b0bd06a3 120
+  s_c654a00dc6a173::t_a3ad80d790cd83 149-150,157-158
+  s_c654a00dc6a173::t_0be30f55091144 1-114,116-119,121-148,151-156,159-489
+  s_c654a00dc6a173::t_ac563c55520388 115
+mods/guildbyte/hooks/duel-commands.mjs
+  s_c654a00dc6a173::t_ad264a0f52952e 1-20
+mods/guildbyte/tests/duel-worker.test.mjs
+  s_c654a00dc6a173::t_43c598c37d1e61 42
+  s_c654a00dc6a173::t_ebf2ac21e44663 193,198-200
+  s_c654a00dc6a173::t_a3ad80d790cd83 40
+  s_c654a00dc6a173::t_0d827638b47cc4 1-30,32,34-39,41,43-192,194-197,201-245
+  s_c654a00dc6a173::t_043ea2c8c1df51 31,33
+mods/guildbyte/tests/duel-format.test.mjs
+  s_c654a00dc6a173::t_6a7730821f6e78 1-39,41-214,216-226
+  s_c654a00dc6a173::t_ac563c55520388 40,215
+mods/guildbyte/scripts/duel-client.mjs
+  s_c654a00dc6a173::t_678d26ebab43b9 1-26,28-89,92-93
+  s_c654a00dc6a173::t_656c7c0b50f000 27,90-91
+mods/guildbyte/types/index.d.ts
+  s_c654a00dc6a173::t_51cf1753126977 35,38,40-302
+  s_c654a00dc6a173::t_cc7194b869c1bc 39
+  s_c654a00dc6a173::t_a1230cc40c14f6 303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59929a99e821f9679804235f646baf8491acd4e4",
+  "prompts": {},
+  "sessions": {
+    "s_c654a00dc6a173": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dd578e93-ca83-47b6-8f08-1c5d32c3b109",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    }
+  }
+}
