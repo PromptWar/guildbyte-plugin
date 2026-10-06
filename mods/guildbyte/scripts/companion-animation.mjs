@@ -54,7 +54,7 @@ export function companionActivity(now = Date.now()) {
         if(position>0)pose='walk'
       }
       if(state!==pose) {state=pose;started=at}
-      return {state,elapsed:Math.max(0,at-started),offset:Math.round(position),facing}
+      return {state,elapsed:Math.max(0,at-started),offset:position,facing}
     },
   }
 }
@@ -74,7 +74,7 @@ export function visitPose(animation,elapsed,target,limit) {
   const far=Math.max(target,Math.min(limit,target+12))
   const progress=arriving ? Math.max(0,elapsed)/1500 : leaving ? Math.min(1,(elapsed-6500)/1500) : 0
   return {frame:companionFrame(animation,state,state==='kiss' ? elapsed-1500 : elapsed),state,facing:leaving ? 'left' : 'right',
-    offset:Math.round(arriving ? far+(target-far)*progress : leaving ? target+(far-target)*progress : target)}
+    offset:arriving ? far+(target-far)*progress : leaving ? target+(far-target)*progress : target}
 }
 
 

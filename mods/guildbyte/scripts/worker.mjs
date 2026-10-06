@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, 
 import { homedir } from 'node:os'
 import { join, basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { animationPixels } from './decode-companion.mjs'
 import { validateAnimation, validateLevelUp } from './companion-animation.mjs'
 
 export function stableId(value) {
@@ -417,8 +418,10 @@ export async function run(input, dependencies = {}) {
       if(!levelUp)throw Error('Guildbyte: invalid level-up animation response.')
     }
   } catch (failure) { error = failure.message?.includes('Guildbyte') || failure.message?.startsWith('Sign in') ? failure.message : 'Guildbyte is offline. Activity remains saved locally.' }
-  try { return { ...summary(db, account,input.sessionId), ...(kiss ? {kiss} : {}), ...(levelUp ? {levelUp} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) } }
-  finally { db.close() }
+  try {
+    const status=summary(db,account,input.sessionId)
+    return { ...status, pixels:animationPixels(status.character?.animation), visitorPixels:animationPixels(status.visit?.character.animation), ...(kiss ? {kiss} : {}), ...(levelUp ? {levelUp} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) }
+  } finally { db.close() }
 }
 
 function summary(db, account,sessionId) {
@@ -441,9 +444,11 @@ function summary(db, account,sessionId) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const timeout=setTimeout(()=>process.exit(1),25000)
   try {
     let stdin = ''
     for await (const chunk of process.stdin) stdin += chunk
     console.log(JSON.stringify(await run(JSON.parse(stdin))))
   } catch { console.log(JSON.stringify({ error: 'Guildbyte sync could not start. Check Node 22.13+ and the app URL in /config.' })); process.exitCode = 1 }
+  finally {clearTimeout(timeout)}
 }

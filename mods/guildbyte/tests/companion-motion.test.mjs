@@ -6,7 +6,9 @@ import { register } from '../hooks/register.mjs'
 const pace=companionActivity(0)
 pace.start('pace',0)
 for(let at=100;at<=1000;at+=100)pace.snapshot(at,12)
-assert.equal(pace.snapshot(1000,12).offset,2,'Patrol movement must match the slower authored stride')
+assert(Math.abs(pace.snapshot(1000,12).offset-1.6)<1e-8,'Patrol retains sub-column motion at the authored pace')
+let previous=pace.snapshot(1000,12).offset
+for(let at=1050;at<=2000;at+=50){const current=pace.snapshot(at,12).offset;assert(Math.abs(current-previous)<=.081,'A 50ms tick must not teleport a whole column');previous=current}
 
 const motion=companionActivity(0)
 assert.equal(motion.snapshot(19999).state,'idle')
@@ -50,6 +52,8 @@ try {
   clips.sleep={frames:[8,19,19],durations:[300,1500,1600]}
   clips.kiss={frames:[0,13,14,0],durations:[100,100,100,100]}
   const animation={version:1,frames:Array.from({length:20},(_,i)=>`frame-${i}`),mirroredFrames:{0:'left-0',2:'left-2',3:'left-3',4:'left-4'},clips}
+  const dot=Buffer.alloc(128*128*4);dot.set([255,0,0,255],(64*128+64)*4)
+  const pixels={width:128,height:128,frames:Array(20).fill(dot.toString('base64')),mirroredFrames:{0:dot.toString('base64'),2:dot.toString('base64'),3:dot.toString('base64')}}
   let incoming=null
   const $={
     plugin:{root:'/plugin'},session:{id:async()=> 'session',usage:async()=>({})},
@@ -57,14 +61,15 @@ try {
     env:{get:async name=>({TERM_PROGRAM:'ghostty'})[name]},
     state:{get:async key=>({value:values.get(key.key)}),set:async (key,value)=>{values.set(key.key,value)}},
     command:{register:async()=>{}},
-    process:{run:async (_args,{stdin})=>{const input=JSON.parse(stdin);requests.push(input);if(input.completedVisits?.includes(incoming?.id))incoming=null;return {exitCode:0,stdout:JSON.stringify({connected:true,character:{id:'char',png:'idle-png',animation},visit:incoming,...(input.action==='levelup' ? {levelUp:{id:'effect-'+requests.length,fromLevel:1,toLevel:input.toLevel??2,version:1,renderScale:1.5,frames:Array.from({length:18},(_,i)=>'gold-'+i),durations:[80,...Array(16).fill(90),120],durationMs:1640}} : {}),...(input.action==='kiss' ? {kiss:{target:input.target.replace(/^@/,'')}} : {})})}}},
+    process:{run:async (_args,{stdin})=>{const input=JSON.parse(stdin);requests.push(input);if(input.completedVisits?.includes(incoming?.id))incoming=null;return {exitCode:0,stdout:JSON.stringify({connected:true,pixels,visitorPixels:incoming ? pixels : null,character:{id:'char',png:'idle-png',animation},visit:incoming,...(input.action==='levelup' ? {levelUp:{id:'effect-'+requests.length,fromLevel:1,toLevel:input.toLevel??2,version:1,renderScale:1.5,frames:Array.from({length:18},(_,i)=>'gold-'+i),durations:[80,...Array(16).fill(90),120],durationMs:1640}} : {}),...(input.action==='kiss' ? {kiss:{target:input.target.replace(/^@/,'')}} : {})})}}},
     clock:{every:(ms,fn)=>{const timer={ms,fn,cancelled:false,cancel(){this.cancelled=true}};timers.push(timer);return timer}},
     ui:{resolve:()=>Object.fromEntries(['Box','Image','Button','Text'].map(type=>[type,props=>({type,props})]))},
   }
+  $.process.spawn=async function*({argv,input}){const result=await $.process.run(argv,{stdin:input});yield {stream:'stdout',text:result.stdout};return {code:result.exitCode}}
   register((event,matcher,hook)=>{if(typeof matcher==='function'){hook=matcher;matcher={}}hooks.set(event+(matcher.command ? ':'+matcher.command : ''),hook)})
   const next=async e=>e
   await hooks.get('session.start')($,{},next)
-  const tick=async at=>{now=at;timers.find(t=>t.ms===50).fn();await Promise.resolve()}
+  const tick=async at=>{now=at;timers.find(t=>t.ms===50).fn();await new Promise(resolve=>setImmediate(resolve))}
   await tick(90000)
   assert.equal(values.get('motion').state,'sleep')
   const beforeRequests=requests.length
@@ -83,12 +88,12 @@ try {
   assert.equal(values.get('motion').facing,'left')
   const tree=await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:3}},next)
   assert.equal(tree.props.children[0].props.position,'absolute')
-  assert(tree.props.children[0].props.right>1)
-  assert.match(tree.props.children[0].props.children[0].props.source.png,/^left-/)
+  assert.equal(tree.props.children[0].props.right,1,'The image placement stays fixed while its pixels move')
+  assert(tree.props.children[0].props.children[0].props.source.rgba,'The terminal gets a native pixel canvas')
   const larger=await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:10}},next)
   assert.equal(larger.props.height,4)
   assert.equal(larger.props.children[0].props.children[0].props.rows,4)
-  assert.equal(larger.props.children[0].props.children[0].props.columns,8)
+  assert.equal(larger.props.children[0].props.children[0].props.columns,20)
   const narrow=await hooks.get('ui.render')($,{props:{bodyColumns:4,maxRows:2}},next)
   assert.equal(narrow.props.children[0].props.children[0].props.columns,4)
   assert.equal(narrow.props.children[0].props.children[0].props.rows,2)
@@ -160,7 +165,28 @@ try {
   assert.equal(blits.at(-1)?.key,'companion','Frames replace the mounted keyed image in place')
   assert.equal(values.get('motion'),beforePaint,'Frame-only updates must not redraw the whole band')
   const latest=await hooks.get('ui.render')($,{requestId:'band',props:{bodyColumns:120,maxRows:4}},next)
-  assert.equal(latest.props.children[0].props.children[0].props.source.png,blits.at(-1).source.png,'Other redraws retain the latest painted frame')
+  assert.deepEqual(latest.props.children[0].props.children[0].props.source,blits.at(-1).source,'Other redraws retain the latest painted frame')
+  const canvas=latest.props.children[0]
+  const columnPixels=128/8
+  const centroid=source=>{const data=Buffer.from(source.rgba,'base64');let total=0,x=0;for(let i=0;i<data.length;i+=4){const a=data[i+3];total+=a;x+=(i/4%source.width)*a}return x/total}
+  let lastX=centroid(blits.at(-1).source)
+  for(let i=0;i<40;i++) {
+    await tick(now+50)
+    const image=blits.at(-1).source,x=centroid(image)
+    assert(Math.abs(x-lastX)<=2,'Actual painted pixels move at most two pixels per tick, never a cell')
+    lastX=x
+    assert.equal(values.get('motion'),beforePaint,'Moving never remounts or repositions the image')
+    assert.equal(image.width,320,'Canvas dimensions stay fixed across column boundaries')
+  }
+  const repainted=await hooks.get('ui.render')($,{requestId:'band',props:{bodyColumns:120,maxRows:4}},next)
+  assert.equal(repainted.props.children[0].props.right,canvas.props.right,'No whole-cell placement jump during a redraw')
+  assert(columnPixels>2)
+  const queued=[];let release
+  $.ui.blit=async args=>{queued.push(args);if(queued.length===1)await new Promise(resolve=>{release=resolve});return {}}
+  await tick(now+50);await tick(now+50)
+  assert.equal(queued.length,1,'A slow native blit cannot overlap a newer frame and paint them out of order')
+  release();await new Promise(resolve=>setImmediate(resolve))
+  assert.equal(queued.length,2,'After a slow paint, coalesce missed ticks into the latest position')
   $.ui.blit=async()=>({deny:'Image unavailable'})
   await tick(295401)
   await tick(295461)

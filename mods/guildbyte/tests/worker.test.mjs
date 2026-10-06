@@ -166,6 +166,7 @@ try {
   const originalVisit=visit
   db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
   const received=await run({...input,action:'sync'},dependencies)
+  assert(received.visitorPixels?.frames[0],'The Node worker provides visitor pixels without changing the stored animation contract')
   assert.equal(received.visit.id,visit.id);assert.equal(received.visit.name,'VisitorUser')
   assert.deepEqual(received.character,character,'A visitor never replaces the pinned character')
   holdAcknowledgement=true
