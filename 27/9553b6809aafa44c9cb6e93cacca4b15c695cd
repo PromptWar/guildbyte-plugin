@@ -1,0 +1,58 @@
+mods/guildbyte/scripts/duel-format.mjs
+  s_23df358c372a72::t_aa3753555d985f 14,30-35,77,139-169
+  s_23df358c372a72::t_cf7eca5b227986 610
+  s_23df358c372a72::t_0a75dcbac2ed35 170,505-609,611-686,698-701
+  s_23df358c372a72::t_780aa1b7ca2a8d 171
+mods/guildbyte/tests/duel-worker.test.mjs
+  s_23df358c372a72::t_bd0bac74b4d736 21-25,62-68,225-256,281
+mods/guildbyte/tests/duel-notices.test.mjs
+  s_23df358c372a72::t_ea55c9ca662afb 1-85
+mods/guildbyte/scripts/duel-client.mjs
+  s_23df358c372a72::t_05210742d9896b 8,77-103,117-118
+mods/guildbyte/tests/duel-panel.test.ts
+  s_23df358c372a72::t_0f97dcbec36ebb 180,182-183,185,187-189,191-193,195,197-198,204-205
+  s_23df358c372a72::t_fce426aaf1b6f3 121-122
+  s_23df358c372a72::t_52fd0836fee7f3 1-22,24-30,35-90,92-97,100-109,111-120,123-179,181,184,186,190,194,196,199-203,206-216
+  s_23df358c372a72::t_2de95a83690930 23,31-34,91,98-99
+  s_23df358c372a72::t_293227ea3aa777 110
+mods/guildbyte/hooks/duel-commands.mjs
+  s_23df358c372a72::t_5988adfbbdb6ac 1,10-16,18-19
+  s_23df358c372a72::t_37ccde86e0ad61 5-6
+mods/guildbyte/types/index.d.ts
+  s_23df358c372a72::t_01c571cf270413 17,288-303,311,317-320,324-326,328,330-336,339
+  s_23df358c372a72::t_97f642253ed22a 327
+  s_23df358c372a72::t_c9431cf773b729 329
+mods/guildbyte/hooks/duel-panel.mjs
+  s_23df358c372a72::t_0f97dcbec36ebb 249-252
+  s_23df358c372a72::t_1dde5881cb0d81 1-5,9-78,80-85,89-90,98,102,104-106,108-110,112-113,115,118,125-126,131-132,141-152,156,158-161,163-172,174-175,177-179,181,183-184,186-187,189-190,192,194-195,197,199,201,203-204,206,209-212,214-222,224-229,231-232,234-237,261
+  s_23df358c372a72::t_a5815d9749973d 6-8,79,86-88,93-97,99-101,103,111,114,116-117,119-124,127-130,133-135,138-140,153-155,157,162,173,176,180,182,185,188,191,193,196,198,200,202,205,207-208,213,223,230,233,238-248,253-260
+  s_23df358c372a72::t_7b19de9a7b2be2 91-92,107
+  s_23df358c372a72::t_0794d4457e19c7 136-137
+mods/guildbyte/scripts/worker.mjs
+  s_23df358c372a72::t_2149ea763b8f41 11,261,336-353,356,368-373,434
+mods/guildbyte/tests/duel-format.test.mjs
+  s_23df358c372a72::t_86aed6f5775d3d 2,70-85,215-256
+  s_23df358c372a72::t_741005ebe0044f 3,261,263-269,271
+mods/guildbyte/hooks/register.mjs
+  s_23df358c372a72::t_37ccde86e0ad61 83
+  s_23df358c372a72::t_5988adfbbdb6ac 3-5,11,129-160,295,297
+  s_23df358c372a72::t_97f642253ed22a 296
+  s_23df358c372a72::t_0f97dcbec36ebb 298
+  s_23df358c372a72::t_ad3436c5c498d8 299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "279553b6809aafa44c9cb6e93cacca4b15c695cd",
+  "prompts": {},
+  "sessions": {
+    "s_23df358c372a72": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfbe7a39-7290-4213-86ac-a3a9b52b26d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    }
+  }
+}
