@@ -1,0 +1,21 @@
+mods/guildbyte/.claude-plugin/plugin.json
+  s_68c6dec9f452ef::t_fa235a59fbebc2 3
+mods/guildbyte/README.md
+  s_68c6dec9f452ef::t_fa235a59fbebc2 1,7,48-71,89-91,96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "79a995409adf639779ee56706067cdda80a1e585",
+  "prompts": {},
+  "sessions": {
+    "s_68c6dec9f452ef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78b1ed22-8838-4217-b140-cd625dd7f373",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    }
+  }
+}
