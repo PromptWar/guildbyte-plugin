@@ -1,5 +1,6 @@
 import { COMPANION_STATES, companionFrame, companionActivity,visitPose } from '../scripts/companion-animation.mjs'
 import { gaugeText, noticeText, rewardIcon, statusReport, visibleSignature } from '../scripts/progression.mjs'
+import { DUEL_COMMAND, registerDuelCommands } from './duel-commands.mjs'
 
 const statusKey = { plugin: 'guildbyte', key: 'status' }
 const motionKey = { plugin: 'guildbyte', key: 'motion' }
@@ -162,6 +163,7 @@ export function register(on, configuration = {}) {
     await $.command.register({ name: 'guildbyte-sync', description: 'Retry pending activity uploads' })
     await $.command.register({ name: 'guildbyte-status', description: 'Show your daily gauge, streak and unclaimed rewards' })
     await $.command.register({name:'kiss',argumentHint:'<user_name>',description:'Send your character to kiss a player in their active Guildbyte session',immediate:true})
+    await $.command.register(DUEL_COMMAND)
     for (const state of COMPANION_STATES) await $.command.register({ name: `guildbyte-${state}`, description: `Show your companion's ${state} pose` })
     await sync($)
     await animate($)
@@ -254,6 +256,7 @@ export function register(on, configuration = {}) {
     const status=await worker($,'kiss',undefined,target)
     return {text:status?.kiss ? `Kiss queued for @${status.kiss.target}. Your character, name and guild will appear in their terminal.` : status?.error ?? 'Guildbyte is syncing. Try /kiss again in a moment.'}
   })
+  registerDuelCommands(on,worker)
   for (const state of COMPANION_STATES) on('command.run', { command: `guildbyte-${state}` }, async $ => {
     activity.preview(state,Date.now())
     await animate($)
