@@ -1,0 +1,43 @@
+mods/guildbyte/.claude-plugin/plugin.json
+  s_113c423c1030ff::t_5bf9cbce0ebd25 3,5-7,10-21
+mods/guildbyte/README.md
+  s_8f3edf86d6b761::t_e8694840463313 1,3,16,48,58-59,61-64
+mods/guildbyte/hooks/register.mjs
+  s_8f3edf86d6b761::t_44ae9ac37720d1 1,12,26,35-38,44,75,81-83,122,124,135,208-215,240-242,248,250
+mods/guildbyte/scripts/companion-animation.mjs
+  s_8f3edf86d6b761::t_9850c876b3591e 3-4,10-11,25,43,79-107
+mods/guildbyte/scripts/worker.mjs
+  s_8f3edf86d6b761::t_2ff8c66a6c6a4c 8,289-291,295,297,334,405-418,420
+mods/guildbyte/tests/companion-animation.test.mjs
+  s_8f3edf86d6b761::t_8f57c55361d981 2,38-66
+mods/guildbyte/tests/companion-motion.test.mjs
+  s_8f3edf86d6b761::t_ab096f82476667 5-10,60,179-192
+mods/guildbyte/tests/worker.test.mjs
+  s_8f3edf86d6b761::t_8297504bb7b835 24,45-48,190,196-212
+mods/guildbyte/types/index.d.ts
+  s_8f3edf86d6b761::t_9ba5923f58df68 9,11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6bf33f3ae63ec2753bf3eb8f4376b4f186c708b9",
+  "prompts": {},
+  "sessions": {
+    "s_113c423c1030ff": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    },
+    "s_8f3edf86d6b761": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "unknown"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    }
+  }
+}
