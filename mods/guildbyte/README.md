@@ -1,4 +1,4 @@
-# Guildbyte 0.3.1
+# Guildbyte 0.3.2
 
 A standard Claude Code plugin installs the mod automatically. Its `AbovePrompt` hook displays your pinned animated Guildbyte character, with a Connect account button and fallback Cash Cow hero when the current account is unpaired or disconnected; no separate mod installation is needed. Requirements: Claude Code 2.1.287+ and Node 22.13+ (built-in SQLite). Implementation follows the [Claude mods guide](https://claude.dev/blog/getting-started-with-claude-code-mods/) and the installed runtime's generated types.
 
@@ -13,7 +13,7 @@ claude plugin install guildbyte@guildbyte --scope user --config appUrl=http://lo
 
 Run `/reload-plugins` or start a new session, then `/guildbyte-connect`. Sign into Guildbyte in the opened browser and claim the ten-minute code. The mod polls the exchange and begins sending numeric batches. `/guildbyte-sync` retries manually. Sign into another Claude subscription, start a new session, and use `/guildbyte-connect` again to link it to the same Guildbyte user. Manage accounts in `/settings`.
 
-Validation and UI tests passed on Claude Code 2.1.289. If the test runner reports that hooks are disabled by a cached rollout setting, start Claude once with network access and retry. The new commands and hooks require a new session or `/reload-plugins`. Picture animation still needs a live check in a supported graphics terminal.
+Validation and UI tests passed on Claude Code 2.1.291. If the test runner reports that hooks are disabled by a cached rollout setting, start Claude once with network access and retry. The new commands and hooks require a new session or `/reload-plugins`. Picture animation still needs a live check in a supported graphics terminal.
 
 ## Sync and reinstall behavior
 
@@ -24,6 +24,14 @@ Activity uploads contain only numeric observations, IDs, timestamps, account UUI
 Local state is stored outside the plugin cache at `~/.claude/guildbyte/<app-origin-hash>/activity.sqlite` (under `CLAUDE_CONFIG_DIR` when set). It holds pairing secrets and installation tokens, is private to the OS user, and survives plugin uninstall/reinstall. Stable observation IDs are deduplicated per Guildbyte user across installations; monotonic snapshots prevent replay from lowering totals. Relinking the same provider UUID reuses one app account. Losing the local database can require pairing again, but imported events retain their stable IDs.
 
 Heartbeat requests run every ten seconds while Claude is active. The app considers an installation online for two minutes after its last heartbeat or batch. No heartbeat means offline, not proof of uninstall. The app polls status every fifteen seconds; setup notices disappear after pairing and remain hidden for previously paired offline installations. Installation tokens expire after ninety days. A 401 clears that account's local token, retains queued data, and asks for `/guildbyte-connect`. Reconnecting replaces expired presence for that account without increasing account count. Other linked accounts may still need reauthentication.
+
+## Performance
+
+Terminal paints are serialized and missed ticks coalesce into the latest frame. Typing, prompt submission and model streaming never await animation paints or background sync. Unchanged poses do not repaint. Only moving characters use a wider RGBA canvas; stationary animations retain their smaller PNG frames. Text-only terminals request no artwork and run no animation timer.
+
+Artwork stays in session memory, outside persisted UI state. The worker decodes only walk frames and sends artwork only when its content revision changes; worker responses for unchanged heartbeats carry character metadata. On the current 28-frame hero this reduced decoded pixel data by 57%. Sync remains incremental and allows only one worker at a time, with bounded reads and request/process timeouts.
+
+The native sandbox benchmark below reports canvas construction time and transfer size. It measured about 0.1–0.25 ms per moving frame locally; this excludes Claude's image blit and the terminal's rendering cost. Picture animation still requires a live terminal check on the target computer.
 
 ## History and duel windows
 

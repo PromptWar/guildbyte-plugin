@@ -10,7 +10,7 @@ let running = false
 let sessionId
 let timer
 let motionTimer
-let companion,pixels,visitorPixels,observedCharacter,levelUp,levelUpStarted=0
+let companion,companionPng,pixels,guestCompanion,visitorPixels,artRevision,visitorArtRevision,observedCharacter,levelUp,levelUpStarted=0
 let activity = companionActivity()
 let travelLimit = 12
 let imageSite,currentPose
@@ -20,10 +20,10 @@ let visitorTarget=9,visitorLimit=24
 
 let painting,paintAgain=false
 function animate($) {
-  paintAgain=true
-  return painting ??= (async()=>{
-    try {while(paintAgain){paintAgain=false;await paint($)}}
-    finally {painting=undefined}
+  if(painting){paintAgain=true;return painting}
+  return painting=(async()=>{
+    try {await paint($)}
+    finally {painting=undefined;if(paintAgain){paintAgain=false;void animate($)}}
   })()
 }
 
@@ -49,15 +49,17 @@ async function paint($) {
   const signature=JSON.stringify(value)
   if(signature!==lastPose) {
     currentPose=value
-    const geometry=JSON.stringify([value.state==='levelup',value.visit?.id])
+    const moving=value.state==='walk' && Boolean(pixels) && travelLimit>0
+    const guestMoving=value.visit?.state==='walk' && Boolean(visitorPixels) && visitorLimit>0
+    const geometry=JSON.stringify([value.state==='levelup',moving,value.visit?.id,guestMoving])
     if(imageSite?.geometry===geometry) {
       const png=value.state==='levelup' ? levelUp?.frames[value.frame] : (value.facing==='left' ? companion?.mirroredFrames?.[value.frame] : null) ?? companion?.frames[value.frame]
       try {
-        const updates=png ? [$.ui.blit({requestId:imageSite.id,key:'companion',source:(value.state==='levelup' ? null : pixelCanvas(pixels,value.frame,value.facing,imageSite.columns,imageSite.travel,value.offset)) ?? {png}})] : []
+        const updates=png ? [$.ui.blit({requestId:imageSite.id,key:'companion',source:(!moving ? null : pixelCanvas(pixels,value.frame,value.facing,imageSite.columns,imageSite.travel,value.offset)) ?? {png}})] : []
         if(value.visit && visitor) {
           const guest=visitor.character.animation,pose=value.visit
           const png=(pose.facing==='left' ? guest.mirroredFrames?.[pose.frame] : null) ?? guest.frames[pose.frame]
-          updates.push($.ui.blit({requestId:imageSite.id,key:'visitor',source:pixelCanvas(visitorPixels,pose.frame,pose.facing,imageSite.columns,imageSite.visitorTravel,pose.offset) ?? {png}}))
+          updates.push($.ui.blit({requestId:imageSite.id,key:'visitor',source:(guestMoving ? pixelCanvas(visitorPixels,pose.frame,pose.facing,imageSite.columns,imageSite.visitorTravel,pose.offset) : null) ?? {png}}))
         }
         if(updates.length && (await Promise.all(updates)).every(result=>!result.deny)) {lastPose=signature;return}
       } catch { /* Older surfaces repaint through the normal render path. */ }
@@ -71,7 +73,7 @@ function stopTimers() {
   for(const handle of [timer,motionTimer]) {
     if(typeof handle==='function')handle();else handle?.cancel()
   }
-  timer=motionTimer=undefined
+  timer=motionTimer=undefined;paintAgain=false
 }
 
 async function worker($, action = 'sync', usage,target) {
@@ -82,22 +84,32 @@ async function worker($, action = 'sync', usage,target) {
     const sentFailures = failures.slice()
     const sentVisits=completedVisits.slice()
     const stream = $.process.spawn({argv:['node', '--no-warnings', `${$.plugin.root}/scripts/worker.mjs`],
-      input: JSON.stringify({ action, sessionId, appUrl: options.appUrl ?? 'http://localhost:3000', importHistory: options.importHistory !== false, usage, failures: sentFailures,completedVisits:sentVisits,observedCharacter,...(target ? action==='levelup' ? parseLevelUpArguments(target) : {target} : {}) }),
+      input: JSON.stringify({ action, sessionId,includeArt:await showsPictures($),artRevision,visitorArtRevision, appUrl: options.appUrl ?? 'http://localhost:3000', importHistory: options.importHistory !== false, usage, failures: sentFailures,completedVisits:sentVisits,observedCharacter,...(target ? action==='levelup' ? parseLevelUpArguments(target) : {target} : {}) }),
     })
     let stdout='',step
     do {step=await stream.next();if(!step.done && step.value.stream==='stdout')stdout+=step.value.text}while(!step.done)
     if (step.value?.code !== 0) throw new Error('Guildbyte needs Node 22.13+ and access to its local sync database.')
-    const {pixels:decoded,visitorPixels:guestPixels,...status} = JSON.parse(stdout)
-    companion = status.connected ? status.character?.animation : null
-    pixels=status.connected ? decoded : null
-    visitorPixels=status.connected ? guestPixels : null
+    const response=JSON.parse(stdout)
+    const {pixels:decoded,visitorPixels:guestPixels,artRevision:revision,visitorArtRevision:guestRevision,...status}=response
+    if(!status.connected || !status.character){companion=companionPng=pixels=artRevision=undefined}
+    else {
+      if(status.character.png!==undefined){companion=status.character.animation;companionPng=status.character.png;pixels=decoded}
+      if(revision!==undefined)artRevision=revision
+      const {png,animation,...metadata}=status.character;status.character=metadata
+    }
+    if(status.visit?.character.png!==undefined){guestCompanion=status.visit.character.animation;visitorPixels=guestPixels}
+    if(guestRevision!==undefined)visitorArtRevision=guestRevision
+    const incoming=status.visit && {...status.visit,character:{...status.visit.character,animation:guestCompanion}}
+    if(status.visit){const {png,animation,...metadata}=status.visit.character;status.visit={...status.visit,character:metadata}}
     observedCharacter=status.connected && status.character ? {id:status.character.id,level:status.character.level??1} : undefined
-    if(status.levelUp){levelUp=status.levelUp;levelUpStarted=Date.now();lastPose=undefined;imageSite=undefined}
+    if(status.levelUp){levelUp=status.levelUp;levelUpStarted=Date.now();lastPose=undefined;imageSite=undefined;const {frames,durations,...metadata}=status.levelUp;status.levelUp=metadata}
     if(!status.connected)levelUp=undefined
     if(!status.connected)visitor=undefined
+    if(!status.visit && !visitor){guestCompanion=visitorPixels=visitorArtRevision=undefined}
     else if(status.visit && status.visit.id!==visitor?.id && !completedVisits.includes(status.visit.id) && Date.parse(status.visit.expiresAt)>Date.now()) {
-      visitor=status.visit;visitStarted=Date.now()
+      visitor=incoming;visitStarted=Date.now()
     }
+    if(incoming?.id===visitor?.id)visitor=incoming
     if (!status.error) {failures.splice(0,sentFailures.length);completedVisits=completedVisits.filter(id=>!sentVisits.includes(id))}
     await $.state.set(statusKey, status)
     return status
@@ -132,7 +144,7 @@ export function register(on, configuration = {}) {
   options = configuration
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    activity=companionActivity();lastPose=undefined;currentPose=imageSite=undefined;levelUp=observedCharacter=undefined
+    activity=companionActivity();lastPose=undefined;currentPose=imageSite=undefined;levelUp=observedCharacter=undefined;artRevision=visitorArtRevision=undefined
     await $.command.register({ name: 'guildbyte-connect', description: 'Link this Claude account to Guildbyte' })
     await $.command.register({name:'guildbyte-levelup',argumentHint:'[1-5] [hero_id]',description:'Preview a gold level-up evolution without changing earned XP',immediate:true})
     await $.command.register({ name: 'guildbyte-sync', description: 'Retry pending activity uploads' })
@@ -141,7 +153,7 @@ export function register(on, configuration = {}) {
     await sync($)
     await animate($)
     timer ??= $.clock.every(10000, () => { void sync($) })
-    motionTimer ??= $.clock.every(50, () => { void animate($) })
+    if(await showsPictures($))motionTimer ??= $.clock.every(50, () => { void animate($) })
     return result
   })
   on('session.end', async ($, e, next) => {
@@ -152,28 +164,28 @@ export function register(on, configuration = {}) {
   on('prompt.edit', async ($, e, next) => {
     activity.activity(Date.now())
     const result=await next(e)
-    await animate($)
+    void animate($)
     return result
   })
   on('prompt.submit', async ($, e, next) => {
     activity.activity(Date.now())
-    await animate($)
+    void animate($)
     const result = await next(e)
-    await sync($)
+    void sync($)
     return result
   })
   on('turn.start', async ($, e, next) => {
     activity.start(e.turnId,Date.now())
-    await animate($)
+    void animate($)
     return next(e)
   })
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (!e.agentId) { activity.finish(e.turnId,Date.now());await animate($);await sync($) }
+    if (!e.agentId) { activity.finish(e.turnId,Date.now());void animate($);void sync($) }
     return result
   })
   on('turn.step', async function* ($, e, next) {
-    if (!e.agentId) {activity.start(e.turnId,Date.now());await animate($)}
+    if (!e.agentId) {activity.start(e.turnId,Date.now());void animate($)}
     const stream=next(e)
     let result,ended=false
     try {
@@ -182,7 +194,7 @@ export function register(on, configuration = {}) {
         if(item.done) {result=item.value;ended=true;break}
         if(!e.agentId) {
           const mode=item.value.kind==='text' ? 'talk' : ['thinking','tool','input'].includes(item.value.kind) ? 'walk' : null
-          if(mode && activity.mode(mode,e.turnId))await animate($)
+          if(mode && activity.mode(mode,e.turnId))void animate($)
         }
         yield item.value
       }
@@ -192,19 +204,19 @@ export function register(on, configuration = {}) {
         // Final steps also fire on desktop builds that omit turn.complete.
         if(ended && result?.stopReason==='tool_use')activity.mode('walk',e.turnId)
         else activity.finish(e.turnId,Date.now())
-        await animate($)
+        void animate($)
       }
     }
     if (result?.stopReason === 'model_context_window_exceeded') {
       failures.push({ kind: 'context', id: `${e.turnId}:${e.index}`, at: new Date().toISOString() })
-      await sync($)
+      void sync($)
     }
     return result
   })
   on('classic.StopFailure', async ($, e, next) => {
     if (e.error === 'rate_limit') {
       failures.push({ kind: 'rate_limit', at: new Date().toISOString() })
-      await sync($)
+      void sync($)
     }
     return next(e)
   })
@@ -248,7 +260,7 @@ export function register(on, configuration = {}) {
     }
     const { value: savedPose = { frame: 0, offset: 0, facing: 'right', state: 'idle' } } = await $.state.get(motionKey)
     const pose=currentPose ?? savedPose
-    const visit=pose.visit?.id===status.visit?.id ? status.visit : null
+    const visit=pose.visit?.id===status.visit?.id ? visitor : null
     const labelRows=visit && (e.props.maxRows ?? 5)>1 ? 1 : 0
     const scale=pose.state==='levelup' ? levelUp?.renderScale??1 : 1
     const rows = Math.max(1, Math.min(4*scale, (e.props.maxRows ?? 5)-labelRows))
@@ -258,21 +270,22 @@ export function register(on, configuration = {}) {
     visitorLimit=Math.max(visitorTarget,Math.min(24,width-columns-home))
     const children = []
     if (!status.connected && Button) children.push(Button({ label: 'Connect account', onPress: () => { void worker($, 'connect') } }))
-    const png = pose.state==='levelup' ? levelUp?.frames[pose.frame] : (pose.facing==='left' ? status.character?.animation?.mirroredFrames?.[pose.frame] : null) ?? status.character?.animation?.frames[pose.frame] ?? status.character?.png
+    const png = pose.state==='levelup' ? levelUp?.frames[pose.frame] : (pose.facing==='left' ? companion?.mirroredFrames?.[pose.frame] : null) ?? companion?.frames[pose.frame] ?? companionPng
     if (Image) {
-      const travel=pose.state==='levelup' || !pixels ? 0 : travelLimit
-      const source=pose.state==='levelup' ? null : pixelCanvas(pixels,pose.frame,pose.facing,columns,travel,pose.offset)
+      const moving=pose.state==='walk' && Boolean(pixels) && travelLimit>0
+      const travel=moving ? travelLimit : 0
+      const source=!moving ? null : pixelCanvas(pixels,pose.frame,pose.facing,columns,travel,pose.offset)
       const image=Image({ key:'companion', source: status.connected && png ? source ?? { png } : { file: `${$.plugin.root}/assets/cash-cow.png`, format: 'png' }, columns:columns+travel, rows, alt: status.connected && status.character ? `Your Guildbyte character: ${pose.state ?? 'idle'}` : 'The Cash Cow Solopreneur' })
       if(!visit || visitorTarget>0)children.push(status.connected ? Box({position:'absolute',right:home,bottom:0,width:columns+travel,height:rows,children:[image]}) : image)
       if(visit) {
-        const arrival=pose.visit,animation=visit.character.animation
+        const arrival=pose.visit,animation=visit.character.animation,guestMoving=arrival.state==='walk' && Boolean(visitorPixels) && visitorLimit>0
         const guestPng=(arrival.facing==='left' ? animation.mirroredFrames?.[arrival.frame] : null) ?? animation.frames[arrival.frame]
-        children.push(Box({position:'absolute',right:home,bottom:0,width:columns+(visitorPixels ? visitorLimit : 0),height:rows,
-          children:[Image({key:'visitor',source:pixelCanvas(visitorPixels,arrival.frame,arrival.facing,columns,visitorLimit,arrival.offset) ?? {png:guestPng},columns:columns+(visitorPixels ? visitorLimit : 0),rows,alt:`${visit.name}${visit.guild ? ' from '+visit.guild : ''}: ${arrival.state}`})]}))
+        children.push(Box({position:'absolute',right:home+(guestMoving ? 0 : arrival.offset),bottom:0,width:columns+(guestMoving ? visitorLimit : 0),height:rows,
+          children:[Image({key:'visitor',source:(guestMoving ? pixelCanvas(visitorPixels,arrival.frame,arrival.facing,columns,visitorLimit,arrival.offset) : null) ?? {png:guestPng},columns:columns+(guestMoving ? visitorLimit : 0),rows,alt:`${visit.name}${visit.guild ? ' from '+visit.guild : ''}: ${arrival.state}`})]}))
         if(Text && labelRows)children.push(Box({position:'absolute',top:0,right:0,width,height:1,children:[Text({children:`${visit.name} · ${visit.guild ? '<'+visit.guild+'>' : 'No guild'}`,wrap:'truncate-end'})]}))
       }
     }
-    imageSite=status.connected && typeof e.requestId==='string' ? {id:e.requestId,columns,travel:pose.state==='levelup' || !pixels ? 0 : travelLimit,visitorTravel:visitorPixels ? visitorLimit : 0,geometry:JSON.stringify([pose.state==='levelup',pose.visit?.id])} : undefined
+    imageSite=status.connected && typeof e.requestId==='string' ? {id:e.requestId,columns,travel:pose.state==='walk' && pixels ? travelLimit : 0,visitorTravel:visitorPixels ? visitorLimit : 0,geometry:JSON.stringify([pose.state==='levelup',pose.state==='walk' && Boolean(pixels) && travelLimit>0,pose.visit?.id,pose.visit?.state==='walk' && Boolean(visitorPixels) && visitorLimit>0])} : undefined
     return Box({ width: e.props.bodyColumns, height: rows+labelRows, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'flex-end', gap: 1, paddingRight: 1, children })
   })
 }

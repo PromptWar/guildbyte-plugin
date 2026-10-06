@@ -166,9 +166,27 @@ try {
   const originalVisit=visit
   db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
   const received=await run({...input,action:'sync'},dependencies)
+  assert.equal(received.visitorPixels.frames.filter(Boolean).length,3,'Only walk frames are decoded; stationary frames remain PNG')
   assert(received.visitorPixels?.frames[0],'The Node worker provides visitor pixels without changing the stored animation contract')
   assert.equal(received.visit.id,visit.id);assert.equal(received.visit.name,'VisitorUser')
   assert.deepEqual(received.character,character,'A visitor never replaces the pinned character')
+  const cachedArt=await run({...input,action:'sync',artRevision:received.artRevision,visitorArtRevision:received.visitorArtRevision},dependencies)
+  assert.equal(cachedArt.pixels,undefined,'An unchanged hero must not decode/transfer RGBA again')
+  assert.equal(cachedArt.visitorPixels,undefined,'An unchanged visitor must not decode/transfer RGBA again')
+  assert.equal(cachedArt.character.png,undefined,'An unchanged hero must not transfer its static PNG again')
+  assert.equal(cachedArt.visit.character.animation,undefined,'Unchanged animation artwork must not be returned on every heartbeat')
+  assert.equal(cachedArt.artRevision,received.artRevision)
+  const textOnly=await run({...input,action:'sync',includeArt:false},dependencies)
+  assert.equal(textOnly.pixels,undefined);assert.equal(textOnly.visitorPixels,undefined)
+  assert.equal(textOnly.character.png,undefined);assert.equal(textOnly.visit.character.animation,undefined)
+  const replacement='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWNgYPj/HwADAgH/xCAAOgAAAABJRU5ErkJggg=='
+  visit={...originalVisit,character:{...originalVisit.character,animation:{...animation,frames:[replacement,...animation.frames.slice(1)]}}}
+  db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
+  const changedArt=await run({...input,action:'sync',artRevision:cachedArt.artRevision,visitorArtRevision:cachedArt.visitorArtRevision},dependencies)
+  assert.notEqual(changedArt.visitorArtRevision,cachedArt.visitorArtRevision,'Changing artwork invalidates the cache even for the same hero and level')
+  assert(changedArt.visitorPixels);assert.equal(changedArt.visit.character.animation.frames[0],replacement)
+  visit=originalVisit
+  db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
   holdAcknowledgement=true
   const acknowledged=await run({...input,action:'sync',completedVisits:[visit.id]},dependencies)
   assert.equal(acknowledged.visit,null)

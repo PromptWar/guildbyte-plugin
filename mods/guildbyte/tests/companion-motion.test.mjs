@@ -187,6 +187,27 @@ try {
   assert.equal(queued.length,1,'A slow native blit cannot overlap a newer frame and paint them out of order')
   release();await new Promise(resolve=>setImmediate(resolve))
   assert.equal(queued.length,2,'After a slow paint, coalesce missed ticks into the latest position')
+  // A continuously busy terminal must not hold prompt hooks until every queued frame drains.
+  const slow=[];let promptFinished=false
+  $.ui.blit=async()=>new Promise(resolve=>{slow.push(()=>resolve({}))})
+  await tick(now+50)
+  const editDuringPaint=hooks.get('prompt.edit')($,{},next).then(()=>{promptFinished=true})
+  await tick(now+50)
+  const finishedWithoutPaint=promptFinished
+  slow[0]();await new Promise(resolve=>setImmediate(resolve))
+  assert.equal(slow.length,2,'A missed tick paints the newest position after the first paint')
+  const finishedAfterOnePaint=promptFinished
+  slow[1]();await editDuringPaint
+  assert(finishedAfterOnePaint,'Prompt hooks wait for at most one paint, not a perpetually replenished animation queue')
+  assert(finishedWithoutPaint,'Typing must return immediately even if terminal drawing is stalled')
+  const oldUsage=$.session.usage;let releaseUsage,submitted=false
+  $.session.usage=()=>new Promise(resolve=>{releaseUsage=resolve})
+  const submission=hooks.get('prompt.submit')($,{text:'private keyboard contents'},next).then(()=>{submitted=true})
+  await new Promise(resolve=>setImmediate(resolve))
+  const submittedBeforeSync=submitted
+  releaseUsage({});$.session.usage=oldUsage
+  await submission;await new Promise(resolve=>setImmediate(resolve))
+  assert(submittedBeforeSync,'Prompt submission must not wait for background syncing or network requests')
   $.ui.blit=async()=>({deny:'Image unavailable'})
   await tick(295401)
   await tick(295461)
@@ -204,6 +225,7 @@ try {
   assert.equal(values.get('motion').frame,13,'Rerunning /guildbyte-kiss must replay from the beginning')
   const levelCommand=await hooks.get('command.run:guildbyte-levelup')($,{args:'5'})
   assert.match(levelCommand.text,/1 → 5/);assert.equal(values.get('motion').state,'levelup');assert.equal(values.get('motion').frame,0)
+  assert.equal(values.get('status').levelUp.frames,undefined,'The level-up artwork stays in memory, outside persisted UI state')
   const auraStarted=now
   await tick(auraStarted+80);assert.equal(values.get('motion').frame,1)
   const auraTree=await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:4}},next)
@@ -219,5 +241,13 @@ try {
   await hooks.get('session.end')($,{},next)
   assert(timers.every(t=>t.cancelled),'Ending the session cancels both timers')
   assert(!JSON.stringify(requests).includes('private'),'Typing and thinking contents never enter the sync worker')
+  // Text-only terminals need presence syncing, not a 20Hz animation timer.
+  const textHooks=new Map(),textTimers=[]
+  const textRegister=(await import('../hooks/register.mjs?text-only')).register
+  textRegister((event,matcher,hook)=>textHooks.set(event,typeof matcher==='function' ? matcher : hook))
+  const textApi={...$,env:{get:async()=>undefined},clock:{every:(ms)=>{textTimers.push(ms)}}}
+  await textHooks.get('session.start')(textApi,{},next)
+  assert.deepEqual(textTimers,[10000],'Text-only terminals never poll animation frames')
+  assert.equal(requests.at(-1).includeArt,false,'Text-only terminals do not request sprite assets')
 } finally {Date.now=originalNow}
 console.log('Companion checks passed: larger sprite, wake/sit/sleep, patrol/home return, streams/cancellation, visitor arrival/kiss/departure, name/guild, acknowledgement and timer cleanup.')

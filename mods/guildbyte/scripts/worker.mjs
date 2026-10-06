@@ -292,6 +292,16 @@ function validatedCharacter(character) {
   return { id: character.id, png: character.png, ...(character.level!==undefined?{level:character.level}:{}), ...(character.heroId?{heroId:character.heroId}:{}), ...(animation ? { animation } : {}) }
 }
 
+// A session keeps artwork in memory; unchanged heartbeats carry only metadata.
+function companionArt(character,knownRevision,includeArt) {
+  if(!character)return {character:null,revision:null}
+  const {png,animation,...metadata}=character
+  if(!includeArt)return {character:metadata,revision:null}
+  const revision=createHash('sha256').update(JSON.stringify(character)).digest('hex')
+  if(revision===knownRevision)return {character:metadata,revision}
+  return {character,revision,pixels:animationPixels(animation)}
+}
+
 export function saveCompanion(db, accountId, response) {
   if (response.character === null) setMeta(db, `character:${accountId}`, 'null')
   const character=validatedCharacter(response.character)
@@ -420,7 +430,8 @@ export async function run(input, dependencies = {}) {
   } catch (failure) { error = failure.message?.includes('Guildbyte') || failure.message?.startsWith('Sign in') ? failure.message : 'Guildbyte is offline. Activity remains saved locally.' }
   try {
     const status=summary(db,account,input.sessionId)
-    return { ...status, pixels:animationPixels(status.character?.animation), visitorPixels:animationPixels(status.visit?.character.animation), ...(kiss ? {kiss} : {}), ...(levelUp ? {levelUp} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) }
+    const art=companionArt(status.character,input.artRevision,input.includeArt!==false),guest=companionArt(status.visit?.character,input.visitorArtRevision,input.includeArt!==false)
+    return { ...status,...(status.connected ? {character:art.character} : {}),...(status.visit ? {visit:{...status.visit,character:guest.character}} : {}),artRevision:art.revision,visitorArtRevision:guest.revision,...('pixels' in art ? {pixels:art.pixels} : {}),...('pixels' in guest ? {visitorPixels:guest.pixels} : {}), ...(kiss ? {kiss} : {}), ...(levelUp ? {levelUp} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) }
   } finally { db.close() }
 }
 

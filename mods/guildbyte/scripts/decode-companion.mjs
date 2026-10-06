@@ -32,9 +32,16 @@ export function decodePng(png) {
 export function animationPixels(animation) {
   if(!animation)return null
   try {
-    const frames=animation.frames.map(decodePng),first=frames[0]
-    const mirrored=Object.entries(animation.mirroredFrames ?? {}).map(([i,png])=>[i,decodePng(png)])
-    if(![...frames,...mirrored.map(([,p])=>p)].every(p=>p.width===first.width && p.height===first.height))return null
-    return {width:first.width,height:first.height,frames:frames.map(p=>p.rgba),mirroredFrames:Object.fromEntries(mirrored.map(([i,p])=>[i,p.rgba]))}
+    // Only moving walk frames need RGBA. Stationary poses use their compact original PNGs.
+    const indices=[...new Set(animation.clips?.walk.frames ?? animation.frames.map((_,i)=>i))]
+    const frames=Array(animation.frames.length).fill(null),mirroredFrames={}
+    let size
+    for(const frame of indices){
+      const original=decodePng(animation.frames[frame]),mirror=animation.mirroredFrames?.[frame] ? decodePng(animation.mirroredFrames[frame]) : null
+      size ??= original
+      if([original,mirror].filter(Boolean).some(p=>p.width!==size.width || p.height!==size.height))return null
+      frames[frame]=original.rgba;if(mirror)mirroredFrames[frame]=mirror.rgba
+    }
+    return size ? {width:size.width,height:size.height,frames,mirroredFrames} : null
   } catch {return null}
 }
