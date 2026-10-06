@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, 
 import { homedir } from 'node:os'
 import { join, basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { validateAnimation } from './companion-animation.mjs'
+import { validateAnimation, validateLevelUp } from './companion-animation.mjs'
 
 export function stableId(value) {
   const hash = createHash('sha256').update(`guildbyte-v1:${value}`).digest('hex')
@@ -286,12 +286,15 @@ function validatedCharacter(character) {
       !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(character.png) ||
       !Buffer.from(character.png, 'base64').subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) return null
   const animation = validateAnimation(character.animation)
-  return { id: character.id, png: character.png, ...(animation ? { animation } : {}) }
+  if(character.level!==undefined && (!Number.isInteger(character.level)||character.level<1||character.level>5))return null
+  if(character.heroId!==undefined && (typeof character.heroId!=='string'||!/^[a-z0-9_]{1,80}$/.test(character.heroId)))return null
+  return { id: character.id, png: character.png, ...(character.level!==undefined?{level:character.level}:{}), ...(character.heroId?{heroId:character.heroId}:{}), ...(animation ? { animation } : {}) }
 }
 
 export function saveCompanion(db, accountId, response) {
-  if (response.character === null) { setMeta(db, `character:${accountId}`, 'null'); return }
+  if (response.character === null) setMeta(db, `character:${accountId}`, 'null')
   const character=validatedCharacter(response.character)
+  if(character && response.character.animation && !character.animation)throw Error('Guildbyte: incompatible animation payload. Update the plugin and restart Claude.')
   if(character)setMeta(db,`character:${accountId}`,JSON.stringify(character))
   const player=response.player
   if(player===null)setMeta(db,`player:${accountId}`,'null')
@@ -328,7 +331,7 @@ export async function run(input, dependencies = {}) {
   let error
   let account
   let linkUrl
-  let kiss
+  let kiss,levelUp
   try {
     account = dependencies.account ?? accountIdentity()
     db.prepare('INSERT INTO accounts(id,plan) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET plan=excluded.plan').run(account.id, account.plan)
@@ -399,8 +402,22 @@ export async function run(input, dependencies = {}) {
     snapshotReadings(db, account, input.sessionId, input.usage)
     saveFailures(db,account,input.sessionId,input.failures,input.usage)
     await upload(db, origin,{sessionId:input.sessionId,accountId:account.id})
+    const current=summary(db,account,input.sessionId).character,observed=input.observedCharacter
+    const automatic=current && observed?.id===current.id && Number.isInteger(observed.level) && observed.level>=1 && observed.level<current.level
+    if(input.action==='levelup' || automatic){
+      const token=db.prepare('SELECT token FROM accounts WHERE id=?').get(account.id)?.token
+      if(!token)throw Error('Guildbyte: run /guildbyte-connect before testing level-up.')
+      if(!current)throw Error('Guildbyte: open a chest and pin a hero first.')
+      const fromLevel=automatic?observed.level:(current.level??1)
+      const toLevel=input.action==='levelup'?(input.toLevel??Math.min(5,fromLevel+1)):current.level
+      if(!Number.isInteger(toLevel)||toLevel<1||toLevel>5)throw Error('Guildbyte: use /guildbyte-levelup [1-5].')
+      if(input.heroId!==undefined && (typeof input.heroId!=='string'||!/^[a-z][a-z0-9_]{0,79}$/.test(input.heroId)))throw Error('Guildbyte: use /guildbyte-levelup [1-5] [hero_id].')
+      const response=await request(origin,'/api/companion/level-up',{fromLevel,toLevel,...(input.action==='levelup'&&input.heroId?{heroId:input.heroId}:{})},token)
+      levelUp=validateLevelUp(response.levelUp)
+      if(!levelUp)throw Error('Guildbyte: invalid level-up animation response.')
+    }
   } catch (failure) { error = failure.message?.includes('Guildbyte') || failure.message?.startsWith('Sign in') ? failure.message : 'Guildbyte is offline. Activity remains saved locally.' }
-  try { return { ...summary(db, account,input.sessionId), ...(kiss ? {kiss} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) } }
+  try { return { ...summary(db, account,input.sessionId), ...(kiss ? {kiss} : {}), ...(levelUp ? {levelUp} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) } }
   finally { db.close() }
 }
 

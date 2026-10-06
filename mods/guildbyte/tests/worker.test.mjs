@@ -21,7 +21,7 @@ let claimed = false
 let character = null
 let visit=null
 let holdAcknowledgement=false
-const heartbeats=[],kisses=[]
+const heartbeats=[],kisses=[],evolutions=[]
 const pixelPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
 let duringUpload
 const server = createServer(async (request, response) => {
@@ -41,6 +41,10 @@ const server = createServer(async (request, response) => {
     heartbeats.push(payload)
     if(payload.acknowledgedVisits?.includes(visit?.id) && !holdAcknowledgement)visit=null
     response.statusCode=expire ? 401 : 200; response.end(JSON.stringify({connected:!expire,character,visit:payload.sessionId===sessionId ? visit : null})); return
+  }
+  if(request.url==='/api/companion/level-up'){
+    assert.equal(request.headers.authorization,'Bearer '+'x'.repeat(48));evolutions.push(payload)
+    response.end(JSON.stringify({levelUp:{id:randomUUID(),heroId:payload.heroId??character.heroId??'cash_cow_solopreneur',version:1,fromLevel:payload.fromLevel,toLevel:payload.toLevel,frames:Array(18).fill(pixelPng),durations:[80,...Array(16).fill(90),120],durationMs:1640}}));return
   }
   if(request.url==='/api/companion/kiss') {
     assert.equal(request.headers.authorization,'Bearer '+'x'.repeat(48));assert.match(payload.requestId,/^[a-f0-9-]{36}$/)
@@ -183,12 +187,29 @@ try {
   saveCompanion(db,accountId,{character:{id:character.id,png:'invalid'}})
   assert.deepEqual(JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get(`character:${accountId}`).value),character)
   const playerOf=()=>JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get(`player:${accountId}`)?.value ?? 'undefined')
-  saveCompanion(db,accountId,{player:{handle:'paul_1a2b3c4d',points:1234}})
+  saveCompanion(db,accountId,{character:null,player:{handle:'paul_1a2b3c4d',points:1234}})
   assert.deepEqual(playerOf(),{handle:'paul_1a2b3c4d',points:1234})
   saveCompanion(db,accountId,{player:{handle:'\u001b[31mevil',points:-1}})
   assert.deepEqual(playerOf(),{handle:'paul_1a2b3c4d',points:1234},'An invalid player keeps the last good one')
   saveCompanion(db,accountId,{player:null})
   assert.equal(playerOf(),null)
+  character={...character,level:1,heroId:'cash_cow_solopreneur'}
+  db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
+  const manual=await run({...input,action:'levelup',toLevel:5},dependencies)
+  assert.equal(manual.levelUp.frames.length,18);assert.equal(manual.character.level,1,'A test preview leaves the pinned level intact')
+  assert.deepEqual(evolutions.at(-1),{fromLevel:1,toLevel:5})
+  const selected=await run({...input,action:'levelup',toLevel:3,heroId:'iris_archon'},dependencies)
+  assert.equal(selected.levelUp.heroId,'iris_archon')
+  assert.equal(selected.character.heroId,'cash_cow_solopreneur','Preview cannot replace pinned hero')
+  assert.deepEqual(evolutions.at(-1),{fromLevel:1,toLevel:3,heroId:'iris_archon'})
+  assert((await run({...input,action:'levelup',toLevel:6},dependencies)).error.includes('[1-5]'))
+  const beforeAuto=evolutions.length
+  character={...character,level:4}
+  db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
+  const automatic=await run({...input,action:'sync',observedCharacter:{id:character.id,level:1}},dependencies)
+  assert.equal(automatic.levelUp.toLevel,4);assert.equal(evolutions.length,beforeAuto+1)
+  assert.equal((await run({...input,action:'sync',observedCharacter:{id:character.id,level:4}},dependencies)).levelUp,undefined,'Observed evolution cannot replay every heartbeat')
+  assert.equal((await run({...input,action:'sync',observedCharacter:{id:randomUUID(),level:1}},dependencies)).levelUp,undefined,'Pinning a different hero is not a level-up')
   character=null
   db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
   assert.equal((await run({...input,action:'sync'},dependencies)).character,null)

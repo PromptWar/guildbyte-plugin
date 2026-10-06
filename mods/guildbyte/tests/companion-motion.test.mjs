@@ -2,6 +2,12 @@ import assert from 'node:assert/strict'
 import { companionActivity } from '../scripts/companion-animation.mjs'
 import { register } from '../hooks/register.mjs'
 
+// Carrying walk: one 1200ms stride travels about two terminal columns.
+const pace=companionActivity(0)
+pace.start('pace',0)
+for(let at=100;at<=1000;at+=100)pace.snapshot(at,12)
+assert.equal(pace.snapshot(1000,12).offset,2,'Patrol movement must match the slower authored stride')
+
 const motion=companionActivity(0)
 assert.equal(motion.snapshot(19999).state,'idle')
 assert.equal(motion.snapshot(20000).state,'sit')
@@ -51,7 +57,7 @@ try {
     env:{get:async name=>({TERM_PROGRAM:'ghostty'})[name]},
     state:{get:async key=>({value:values.get(key.key)}),set:async (key,value)=>{values.set(key.key,value)}},
     command:{register:async()=>{}},
-    process:{run:async (_args,{stdin})=>{const input=JSON.parse(stdin);requests.push(input);if(input.completedVisits?.includes(incoming?.id))incoming=null;return {exitCode:0,stdout:JSON.stringify({connected:true,character:{id:'char',png:'idle-png',animation},visit:incoming,...(input.action==='kiss' ? {kiss:{target:input.target.replace(/^@/,'')}} : {})})}}},
+    process:{run:async (_args,{stdin})=>{const input=JSON.parse(stdin);requests.push(input);if(input.completedVisits?.includes(incoming?.id))incoming=null;return {exitCode:0,stdout:JSON.stringify({connected:true,character:{id:'char',png:'idle-png',animation},visit:incoming,...(input.action==='levelup' ? {levelUp:{id:'effect-'+requests.length,fromLevel:1,toLevel:input.toLevel??2,version:1,renderScale:1.5,frames:Array.from({length:18},(_,i)=>'gold-'+i),durations:[80,...Array(16).fill(90),120],durationMs:1640}} : {}),...(input.action==='kiss' ? {kiss:{target:input.target.replace(/^@/,'')}} : {})})}}},
     clock:{every:(ms,fn)=>{const timer={ms,fn,cancelled:false,cancel(){this.cancelled=true}};timers.push(timer);return timer}},
     ui:{resolve:()=>Object.fromEntries(['Box','Image','Button','Text'].map(type=>[type,props=>({type,props})]))},
   }
@@ -170,6 +176,20 @@ try {
   await hooks.get('command.run:guildbyte-kiss')($,{})
   await tick(kissStarted+600)
   assert.equal(values.get('motion').frame,13,'Rerunning /guildbyte-kiss must replay from the beginning')
+  const levelCommand=await hooks.get('command.run:guildbyte-levelup')($,{args:'5'})
+  assert.match(levelCommand.text,/1 → 5/);assert.equal(values.get('motion').state,'levelup');assert.equal(values.get('motion').frame,0)
+  const auraStarted=now
+  await tick(auraStarted+80);assert.equal(values.get('motion').frame,1)
+  const auraTree=await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:4}},next)
+  assert.equal(auraTree.props.children[0].props.children[0].props.source.png,'gold-1','Aura frame is actually painted by the mounted image')
+  const bigAura=await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:10}},next)
+  assert.equal(bigAura.props.children[0].props.children[0].props.rows,6,'Aura needs room around the unchanged hero')
+  assert.equal(bigAura.props.children[0].props.children[0].props.columns,12)
+  await tick(auraStarted+1641);assert.notEqual(values.get('motion').state,'levelup','The shared aura clears after one run')
+  await hooks.get('command.run:guildbyte-levelup')($,{args:'5'});assert.equal(values.get('motion').frame,0,'Rerun restarts gold aura')
+  await tick(now+80);assert.equal(values.get('motion').frame,1)
+  const beforeInvalid=requests.length
+  assert.match((await hooks.get('command.run:guildbyte-levelup')($,{args:'6'})).text,/\[1-5\]/);assert.equal(requests.length,beforeInvalid)
   await hooks.get('session.end')($,{},next)
   assert(timers.every(t=>t.cancelled),'Ending the session cancels both timers')
   assert(!JSON.stringify(requests).includes('private'),'Typing and thinking contents never enter the sync worker')

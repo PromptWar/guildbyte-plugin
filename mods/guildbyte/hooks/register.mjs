@@ -1,4 +1,4 @@
-import { COMPANION_STATES, companionFrame, companionActivity,visitPose } from '../scripts/companion-animation.mjs'
+import { COMPANION_STATES, companionFrame, companionActivity,visitPose,levelUpFrame,parseLevelUpArguments } from '../scripts/companion-animation.mjs'
 
 const statusKey = { plugin: 'guildbyte', key: 'status' }
 const motionKey = { plugin: 'guildbyte', key: 'motion' }
@@ -9,7 +9,7 @@ let running = false
 let sessionId
 let timer
 let motionTimer
-let companion
+let companion,observedCharacter,levelUp,levelUpStarted=0
 let activity = companionActivity()
 let travelLimit = 12
 let imageSite,currentPose
@@ -23,7 +23,7 @@ async function animate($) {
     completedVisits.push(visitor.id);completedVisits=completedVisits.slice(-20);visitor=undefined
   }
   const canMirror=companion?.clips.walk.frames.every(frame=>companion.mirroredFrames?.[frame]) ?? false
-  const pose=activity.snapshot(now,visitor ? 0 : travelLimit,canMirror)
+  const pose=activity.snapshot(now,visitor || levelUp ? 0 : travelLimit,canMirror)
   const value={state:pose.state,frame:companionFrame(companion,pose.state,pose.elapsed),offset:pose.offset,facing:pose.facing}
   if(visitor) {
     const elapsed=now-visitStarted,visit=visitPose(visitor.character.animation,elapsed,visitorTarget,visitorLimit)
@@ -32,12 +32,16 @@ async function animate($) {
     value.frame=companionFrame(companion,value.state,Math.max(0,elapsed-1500))
     value.offset=0;value.facing='left'
   }
+  if(levelUp){
+    if(now-levelUpStarted>=levelUp.durationMs)levelUp=undefined
+    else if(!visitor){value.state='levelup';value.frame=levelUpFrame(levelUp,now-levelUpStarted);value.facing='right';value.offset=0;value.effect=levelUp.id}
+  }
   const signature=JSON.stringify(value)
   if(signature!==lastPose) {
     currentPose=value
     const geometry=JSON.stringify([value.state,value.offset,value.visit?.id,value.visit?.offset])
     if(imageSite?.geometry===geometry) {
-      const png=(value.facing==='left' ? companion?.mirroredFrames?.[value.frame] : null) ?? companion?.frames[value.frame]
+      const png=value.state==='levelup' ? levelUp?.frames[value.frame] : (value.facing==='left' ? companion?.mirroredFrames?.[value.frame] : null) ?? companion?.frames[value.frame]
       try {
         const updates=png ? [$.ui.blit({requestId:imageSite.id,key:'companion',source:{png}})] : []
         if(value.visit && visitor) {
@@ -68,12 +72,15 @@ async function worker($, action = 'sync', usage,target) {
     const sentFailures = failures.slice()
     const sentVisits=completedVisits.slice()
     const result = await $.process.run(['node', '--no-warnings', `${$.plugin.root}/scripts/worker.mjs`], {
-      stdin: JSON.stringify({ action, sessionId, appUrl: options.appUrl ?? 'http://localhost:3000', importHistory: options.importHistory !== false, usage, failures: sentFailures,completedVisits:sentVisits,...(target ? {target} : {}) }),
+      stdin: JSON.stringify({ action, sessionId, appUrl: options.appUrl ?? 'http://localhost:3000', importHistory: options.importHistory !== false, usage, failures: sentFailures,completedVisits:sentVisits,observedCharacter,...(target ? action==='levelup' ? parseLevelUpArguments(target) : {target} : {}) }),
       timeoutMs: 25000,
     })
     if (result.exitCode !== 0) throw new Error('Guildbyte needs Node 22.13+ and access to its local sync database.')
     const status = JSON.parse(result.stdout)
     companion = status.connected ? status.character?.animation : null
+    observedCharacter=status.connected && status.character ? {id:status.character.id,level:status.character.level??1} : undefined
+    if(status.levelUp){levelUp=status.levelUp;levelUpStarted=Date.now();lastPose=undefined;imageSite=undefined}
+    if(!status.connected)levelUp=undefined
     if(!status.connected)visitor=undefined
     else if(status.visit && status.visit.id!==visitor?.id && !completedVisits.includes(status.visit.id) && Date.parse(status.visit.expiresAt)>Date.now()) {
       visitor=status.visit;visitStarted=Date.now()
@@ -112,8 +119,9 @@ export function register(on, configuration = {}) {
   options = configuration
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    activity=companionActivity();lastPose=undefined;currentPose=imageSite=undefined
+    activity=companionActivity();lastPose=undefined;currentPose=imageSite=undefined;levelUp=observedCharacter=undefined
     await $.command.register({ name: 'guildbyte-connect', description: 'Link this Claude account to Guildbyte' })
+    await $.command.register({name:'guildbyte-levelup',argumentHint:'[1-5] [hero_id]',description:'Preview a gold level-up evolution without changing earned XP',immediate:true})
     await $.command.register({ name: 'guildbyte-sync', description: 'Retry pending activity uploads' })
     await $.command.register({name:'kiss',argumentHint:'<user_name>',description:'Send your character to kiss a player in their active Guildbyte session',immediate:true})
     for (const state of COMPANION_STATES) await $.command.register({ name: `guildbyte-${state}`, description: `Show your companion's ${state} pose` })
@@ -124,7 +132,7 @@ export function register(on, configuration = {}) {
     return result
   })
   on('session.end', async ($, e, next) => {
-    stopTimers();currentPose=imageSite=undefined
+    stopTimers();currentPose=imageSite=levelUp=undefined
     await sync($)
     return next(e)
   })
@@ -197,6 +205,14 @@ export function register(on, configuration = {}) {
     const status = await sync($)
     return { text: status?.error ?? `Guildbyte: ${status?.pending ?? 0} records waiting to sync.` }
   })
+  on('command.run',{command:'guildbyte-levelup'},async ($,e)=>{
+    const target=e.args?.trim()??''
+    if(!parseLevelUpArguments(target))return {text:'Use /guildbyte-levelup [1-5] [hero_id].'}
+    if(visitor)return {text:'Wait for the current kiss visit to finish, then preview level-up.'}
+    const status=await worker($,'levelup',undefined,target)
+    await animate($)
+    return {text:status?.levelUp ? `Gold evolution preview: level ${status.levelUp.fromLevel} → ${status.levelUp.toLevel}. Earned XP is unchanged.` : status?.error??'Guildbyte is syncing. Try again in a moment.'}
+  })
   on('command.run',{command:'kiss'},async ($,e)=>{
     const target=e.args?.trim()
     if(!/^@?[a-z0-9_]{3,24}$/i.test(target ?? ''))return {text:'Use /kiss <Guildbyte handle>, for example /kiss @ayla.'}
@@ -221,16 +237,17 @@ export function register(on, configuration = {}) {
     const pose=currentPose ?? savedPose
     const visit=pose.visit?.id===status.visit?.id ? status.visit : null
     const labelRows=visit && (e.props.maxRows ?? 5)>1 ? 1 : 0
-    const rows = Math.max(1, Math.min(4, (e.props.maxRows ?? 5)-labelRows))
-    const width=Math.max(1,e.props.bodyColumns),columns=Math.min(8,rows*2,visit && width>=3 ? Math.floor((width-1)/2) : width),home=Math.min(1,width-columns)
+    const scale=pose.state==='levelup' ? levelUp?.renderScale??1 : 1
+    const rows = Math.max(1, Math.min(4*scale, (e.props.maxRows ?? 5)-labelRows))
+    const width=Math.max(1,e.props.bodyColumns),columns=Math.min(8*scale,rows*2,visit && width>=3 ? Math.floor((width-1)/2) : width),home=Math.min(1,width-columns)
     travelLimit=Math.min(12,Math.max(0,width-columns-home))
     visitorTarget=width>=columns*2+home+1 ? columns+1 : 0
     visitorLimit=Math.max(visitorTarget,Math.min(24,width-columns-home))
     const children = []
     if (!status.connected && Button) children.push(Button({ label: 'Connect account', onPress: () => { void worker($, 'connect') } }))
-    const png = (pose.facing==='left' ? status.character?.animation?.mirroredFrames?.[pose.frame] : null) ?? status.character?.animation?.frames[pose.frame] ?? status.character?.png
+    const png = pose.state==='levelup' ? levelUp?.frames[pose.frame] : (pose.facing==='left' ? status.character?.animation?.mirroredFrames?.[pose.frame] : null) ?? status.character?.animation?.frames[pose.frame] ?? status.character?.png
     if (Image) {
-      const image=Image({ key:'companion', source: status.connected && png ? { png } : { file: `${$.plugin.root}/assets/mage.png`, format: 'png' }, columns, rows, alt: status.connected && status.character ? `Your Guildbyte character: ${pose.state ?? 'idle'}` : 'Guildbyte pixel-art mage' })
+      const image=Image({ key:'companion', source: status.connected && png ? { png } : { file: `${$.plugin.root}/assets/cash-cow.png`, format: 'png' }, columns, rows, alt: status.connected && status.character ? `Your Guildbyte character: ${pose.state ?? 'idle'}` : 'The Cash Cow Solopreneur' })
       if(!visit || visitorTarget>0)children.push(status.connected ? Box({position:'absolute',right:home+Math.min(travelLimit,pose.offset ?? 0),bottom:0,width:columns,height:rows,children:[image]}) : image)
       if(visit) {
         const arrival=pose.visit,animation=visit.character.animation
