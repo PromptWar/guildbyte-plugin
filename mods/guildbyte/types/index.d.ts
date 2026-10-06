@@ -14,6 +14,7 @@ export type GuildbyteProgression = {
 export type GuildbyteNotice =
   | { id: string; kind: 'reward'; reward: 'gold' | 'chest'; claimUrl: string }
   | { id: string; kind: 'promotion' | 'demotion'; from: string; to: string; claimUrl: string }
+  | { id: string; kind: 'duel-request'; request: DuelRequestNotice }
 
 export type GuildbyteStatus = {
   connected: boolean
@@ -284,6 +285,22 @@ export type GuildDuelDashboard = {
   canRespond: boolean
 }
 
+// ---------- Heartbeat (additive; older servers omit it) ----------
+
+export type DuelRequestKind = 'duel' | 'lobby' | 'guild_challenge' | 'guild_roster'
+/** One open request from the heartbeat's `duels.requests`; the worker stores `webUrl` absolute. */
+export type DuelRequestNotice = {
+  id: string
+  code: string | null
+  kind: DuelRequestKind
+  from: string
+  durationSeconds: number
+  wagerGold: number
+  expiresAt: string | null
+  webUrl: string
+}
+export type HeartbeatDuels = { badge: number; energy: DuelEnergy; requests: DuelRequestNotice[] }
+
 // ---------- /duel worker results (scripts/duel-client.mjs) ----------
 
 export type DuelCommandResult = { origin: string } & (
@@ -291,18 +308,34 @@ export type DuelCommandResult = { origin: string } & (
   | { kind: 'setup'; handles: string[]; dashboard: DuelDashboard }
   | { kind: 'view'; duel: DuelSummary }
   | { kind: 'created' | 'lobby' | 'accepted' | 'joined' | 'declined' | 'cancelled' | 'left' | 'forfeited'; duel: DuelSummary }
-  | { kind: 'confirm'; action: 'challenge' | 'lobby' | 'accept'; command: string; wagerGold?: number; lossGold: number | null; allIn: boolean; message?: string | null }
+  | { kind: 'confirm'; action: 'challenge' | 'lobby' | 'accept' | 'guildReady' | 'guildChallenge'; command: string; wagerGold?: number; lossGold: number | null; allIn: boolean; message?: string | null }
   | { kind: 'confirm'; action: 'forfeit'; id: string }
   | { kind: 'preview'; token: string; preview: LobbyPreview }
   | { kind: 'energy' | 'energyConfirm'; energy: DuelEnergy }
   | { kind: 'energyBought'; result: EnergyPurchaseResult }
   | { kind: 'link'; link: DuelLink; regenerated?: boolean }
-  | { kind: 'guild' }
+  | { kind: 'guildDashboard'; dashboard: GuildDuelDashboard }
+  | { kind: 'guildSetup'; slug: string; dashboard: GuildDuelDashboard }
+  | { kind: 'guildView' | 'guildRoster'; duel: GuildDuelSummary }
+  | { kind: 'guildUpdated'; action: 'declare' | 'accept' | 'decline' | 'cancel' | 'add' | 'remove' | 'ready' | 'unready' | 'decline-selection'; handle?: string; duel: GuildDuelSummary }
   | { kind: 'error'; error: string; status?: number; setupUrl?: string }
+)
+
+// ---------- /duel panel (hooks/duel-panel.mjs) ----------
+
+/** Shared by every panel: busy while the worker runs, `message` for the last error. */
+export type DuelPanelBase = { link?: string; busy?: boolean; message?: string }
+export type DuelPanel = DuelPanelBase & (
+  | { kind: 'challenge'; handles: string[]; duration: '1h' | '6h' | '1d' | '3d' | '7d'; wager: number; custom: boolean; step: 'edit' | 'confirm'
+      gold: number; wagersEnabled: boolean; energy: { available: number; max: number } }
+  | { kind: 'guildChallenge'; slug: string; guild: string | null; teamSize: number; wager: number; custom: boolean; step: 'edit' | 'confirm' }
+  | { kind: 'confirm'; title: string; lines: string[]; cancelLabel: string; confirmLabel: string; args: string }
+  | { kind: 'roster'; duel: GuildDuelSummary }
+  | { kind: 'result'; title: string; text: string }
 )
 
 declare module 'claude-code' {
   interface PluginState {
-    guildbyte: { status: GuildbyteStatus; progression: GuildbyteProgression | null; chest: number; motion: { frame: number; state: string; offset: number; facing: 'left'|'right';visit?:{id:string;frame:number;state:string;offset:number;facing:string} } }
+    guildbyte: { status: GuildbyteStatus; progression: GuildbyteProgression | null; chest: number; duelPanel: DuelPanel | null; motion: { frame: number; state: string; offset: number; facing: 'left'|'right';visit?:{id:string;frame:number;state:string;offset:number;facing:string} } }
   }
 }

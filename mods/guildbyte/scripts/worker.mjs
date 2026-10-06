@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url'
 import { validateAnimation } from './companion-animation.mjs'
 import { validateProgression, isNewer, fresh, claimable } from './progression.mjs'
 import { runDuelCommand } from './duel-client.mjs'
+import { webLink } from './duel-format.mjs'
 
 export function stableId(value) {
   const hash = createHash('sha256').update(`guildbyte-v1:${value}`).digest('hex')
@@ -257,6 +258,7 @@ export async function upload(db, origin, session) {
         const response=await request(origin, '/api/installations/heartbeat', active ? {sessionId:session.sessionId,acknowledgedVisits} : {}, account.token)
         saveCompanion(db, account.id, response)
         saveProgression(db, account.id, response)
+        saveDuelRequests(db, account.id, response, origin)
         if(active) {
           saveVisit(db,account.id,session.sessionId,response)
           // Remove only acknowledgements sent in this request; another worker
@@ -331,11 +333,27 @@ export function cachedProgression(db, accountId, origin, now = Date.now()) {
   return { ...rest, claimUrl: origin + claimPath }
 }
 
-// Each reward unlock and league change is announced once, across every
-// session sharing this database. Rewards and promotions are immediate. A
+const DUEL_REQUEST_KINDS = ['duel', 'lobby', 'guild_challenge', 'guild_roster']
+const printable = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\x00-\x1f\x7f-\x9f]/.test(value)
+
+// Caches the heartbeat's open duel requests (`duels.requests`, plan §12). An
+// older server sends no `duels` field and leaves the cache as it was; an
+// invalid entry is dropped, never shown.
+export function saveDuelRequests(db, accountId, response, origin) {
+  const requests = response?.duels?.requests
+  if (!Array.isArray(requests)) return
+  const valid = requests.slice(0, 20).filter(request => request && printable(request.id, 64) && (request.code === null || /^[0-9A-HJKMNP-TV-Z]{6}$/.test(request.code)) &&
+    DUEL_REQUEST_KINDS.includes(request.kind) && printable(request.from, 80) && Number.isSafeInteger(request.durationSeconds) && request.durationSeconds > 0 &&
+    Number.isSafeInteger(request.wagerGold) && request.wagerGold >= 0 && (request.expiresAt === null || Number.isFinite(Date.parse(request.expiresAt))))
+  setMeta(db, `duel-requests:${accountId}`, JSON.stringify(valid.map(({ id, code, kind, from, durationSeconds, wagerGold, expiresAt, webUrl }) =>
+    ({ id, code, kind, from, durationSeconds, wagerGold, expiresAt, webUrl: webLink(origin, webUrl, kind.startsWith('guild') ? '/duels?tab=guild' : '/duels') }))))
+}
+
+// Each reward unlock, league change and duel request is announced once, across
+// every session sharing this database. Rewards and promotions are immediate. A
 // demotion is queued quietly and delivered only at the next Claude session
 // start; a later league change replaces it.
-export function takeNotices(db, accountId, progression, sessionStart = false) {
+export function takeNotices(db, accountId, progression, sessionStart = false, now = Date.now()) {
   const key = `notified:${accountId}`, queueKey = `queued-notices:${accountId}`
   db.exec('BEGIN IMMEDIATE')
   try {
@@ -346,6 +364,12 @@ export function takeNotices(db, accountId, progression, sessionStart = false) {
     for (const reward of claimable(progression)) {
       const id = `${progression.localDay}:${reward}`
       if (!notified.includes(id)) notices.push({ id, kind: 'reward', reward, claimUrl: progression.claimUrl })
+    }
+    // A new duel request toasts once in one session, whichever syncs first.
+    for (const request of JSON.parse(getMeta(db, `duel-requests:${accountId}`) ?? '[]')) {
+      const id = `duel-request:${request.kind}:${request.code ?? request.id}`
+      if (request.expiresAt && Date.parse(request.expiresAt) <= now || notified.includes(id)) continue
+      notices.push({ id, kind: 'duel-request', request })
     }
     const change = progression?.leagueChange
     if (change && !notified.includes(`league:${change.id}`)) {
@@ -407,6 +431,7 @@ export async function run(input, dependencies = {}) {
           const response = await request(origin, '/api/installations/heartbeat', {}, active.token)
           saveCompanion(db, account.id, response)
           saveProgression(db, account.id, response)
+          saveDuelRequests(db, account.id, response, origin)
         }
         catch (failure) {
           if (failure.status !== 401) throw failure

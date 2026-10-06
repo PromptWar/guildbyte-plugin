@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { parseDuelCommand, formatDuelReply, formatUsage, joinToken, points, span, durationLabel, webLink, DUEL_USAGE } from '../scripts/duel-format.mjs'
-import { DUEL_COMMAND, registerDuelCommands } from '../hooks/duel-commands.mjs'
+import { parseDuelCommand, formatDuelReply, formatUsage, joinToken, points, span, durationLabel, webLink, duelNoticeText, DUEL_USAGE } from '../scripts/duel-format.mjs'
+import { DUEL_COMMAND, duelFailure, duelUsage } from '../hooks/duel-commands.mjs'
 
 const now = Date.parse('2026-10-06T12:00:00Z')
 const at = minutes => new Date(now + minutes * 60000).toISOString()
@@ -67,7 +67,22 @@ assert.deepEqual(parse('link off'), { kind: 'linkUpdate', enabled: false })
 assert.deepEqual(parse('link 6h'), { kind: 'linkUpdate', durationSeconds: 21600 })
 assert.deepEqual(parse('link regenerate'), { kind: 'linkRegenerate' })
 assert.equal(parse('link 2h').kind, 'usage')
-assert.deepEqual(parse('guild @rivals 5 25'), { kind: 'guild' })
+assert.deepEqual(parse('guild'), { kind: 'guildDashboard' })
+assert.deepEqual(parse('guild @rivals'), { kind: 'guildSetup', slug: 'rivals' })
+assert.deepEqual(parse('guild @Rivals 5 25'), { kind: 'guildChallenge', slug: 'rivals', teamSize: 5, wager: 25, confirm: false, raw: 'guild @rivals 5 25' })
+assert.deepEqual(parse('guild night-owls 10 150 confirm'), { kind: 'guildChallenge', slug: 'night-owls', teamSize: 10, wager: 150, confirm: true, raw: 'guild @night-owls 10 150' })
+assert.deepEqual(parse('guild @view'), { kind: 'guildSetup', slug: 'view' }, 'An @ slug never reads as a subcommand')
+for (const [word, kind] of [['view', 'guildView'], ['accept', 'guildAccept'], ['decline', 'guildDecline'], ['cancel', 'guildCancel'], ['unready', 'guildUnready'], ['decline-selection', 'guildDeclineSelection']]) {
+  assert.deepEqual(parse(`guild ${word} q7km2p`), { kind, id: 'Q7KM2P' })
+  assert.equal(parse(`guild ${word} q7km2p confirm`).kind, 'usage')
+}
+assert.deepEqual(parse('guild ready Q7KM2P confirm allin'), { kind: 'guildReady', id: 'Q7KM2P', confirm: true, allIn: true })
+assert.deepEqual(parse('guild roster Q7KM2P'), { kind: 'guildRosterView', id: 'Q7KM2P' })
+assert.deepEqual(parse('guild roster Q7KM2P add @Alice'), { kind: 'guildRoster', id: 'Q7KM2P', action: 'add', handle: 'alice' })
+assert.deepEqual(parse('guild roster Q7KM2P remove bob_1'), { kind: 'guildRoster', id: 'Q7KM2P', action: 'remove', handle: 'bob_1' })
+for (const bad of ['guild accept', 'guild roster Q7KM2P kick @a1x', 'guild roster Q7KM2P add', 'guild @rivals 1 25', 'guild @rivals 11 25', 'guild @rivals 5 all', 'guild @rivals 5 25 allin', 'guild @x', 'guild @rivals 5']) {
+  assert.equal(parse(bad).kind, 'usage', bad)
+}
 assert.equal(formatUsage(parse('help')), DUEL_USAGE)
 
 // ---------- Helpers ----------
@@ -197,30 +212,60 @@ assert.match(formatDuelReply({ kind: 'energyConfirm', energy: { ...energy, avail
 assert.match(formatDuelReply({ kind: 'energyBought', result: { energy: { ...energy, available: 2 }, gold: 1340 }, origin }, now), /^Bought 1 Battle Energy for 1,000 gold\. 1,340 gold left\.\nBattle Energy 2\/3/)
 assert.match(formatDuelReply({ kind: 'link', link: { url: null, enabled: true, durationSeconds: 21600, activeCount: 3 }, origin }), /Challenge link: on · 6h exhibitions · 3 active\nThe link is shown only when it is created/)
 assert.match(formatDuelReply({ kind: 'link', regenerated: true, link: { url: '/duels/challenge/abc', enabled: true, durationSeconds: 3600, activeCount: 0 }, origin }), /previous link no longer works[\s\S]*Share: https:\/\/guildbyte\.test\/duels\/challenge\/abc/)
-assert.match(formatDuelReply({ kind: 'guild', origin }), /\/duels\?tab=guild$/)
+
+// ---------- Guild duels ----------
+const member = (handle, state, extra = {}) => ({ handle, href: `/players/${handle}`, state, hero: null, contribution: null, payoutGold: 0, lastSyncedAt: null, isYou: false, ...extra })
+const side = (which, name, extra = {}) => ({ side: which, guild: { id: `${which}-id`, name, slug: name.toLowerCase().replace(/ /g, '-') }, total: null, outcome: null, readyCount: 0, roster: [], ...extra })
+const guildYou = (extra = {}) => ({ side: 'challenger', canAccept: false, canDecline: false, canCancel: false, canEditRoster: false, canReady: false, canUnready: false, canDeclineSelection: false, confirm, ...extra })
+const guildDuel = (extra = {}) => ({ id: '1b6f1d2c-3a4b-4c5d-8e9f-0a1b2c3d4e5f', code: 'G7KM2P', url: '/duels/guild/G7KM2P', rulesVersion: 2, mode: 'competitive', status: 'rostering', endedReason: null, invalidatedReason: null,
+  teamSize: 3, durationSeconds: 604800, wagerGold: 25, potGold: 150, proposedAt: at(-60), expiresAt: at(6 * 1440), startsAt: null, endsAt: null, settlesAt: null, settledAt: null, provisional: false, winner: null,
+  sides: [side('challenger', 'Night Owls', { readyCount: 1, roster: [member('me', 'ready', { isYou: true }), member('bob', 'selected'), member('old', 'removed')] }), side('defender', 'Rivals', { readyCount: 2 })],
+  you: guildYou({ canEditRoster: true, canUnready: true, canCancel: true }), ...extra })
+const guildDashboard = { guild: { id: 'challenger-id', name: 'Night Owls', slug: 'night-owls' }, record: { wins: 3, losses: 1, draws: 0 }, canDeclare: true, canRespond: true,
+  incoming: [guildDuel({ code: 'INC001', status: 'proposed', sides: [side('challenger', 'Rivals'), side('defender', 'Night Owls')], you: guildYou({ side: 'defender', canAccept: true, canDecline: true }) })],
+  outgoing: [], rostering: [guildDuel()],
+  active: [guildDuel({ code: 'ACT001', status: 'active', endsAt: at(2 * 1440 + 120), provisional: true, you: guildYou(), sides: [side('challenger', 'Night Owls', { total: '12400.0000' }), side('defender', 'Rivals', { total: '11980.5000' })] })],
+  history: [guildDuel({ code: 'OLD001', status: 'completed', you: guildYou(), sides: [side('challenger', 'Night Owls', { total: '13200.0000', outcome: 'won' }), side('defender', 'Rivals', { total: '12100.0000', outcome: 'lost' })] })] }
+assert.equal(formatDuelReply({ kind: 'guildDashboard', dashboard: guildDashboard, origin }, now), [
+  'GUILD DUELS · Night Owls · Record 3W 1L 0D', '',
+  'INCOMING', '[INC001] vs Rivals · 3v3 · 25 gold each · expires in 6d', '       /duel guild accept INC001   /duel guild decline INC001', '',
+  'ROSTER LOBBIES', '[G7KM2P] vs Rivals · 3v3 · 25 gold each · ready 1/3 — 2/3 · expires in 6d', '       /duel guild roster G7KM2P   /duel guild unready G7KM2P   /duel guild cancel G7KM2P', '',
+  'ACTIVE', '[ACT001] vs Rivals · 3v3 · 2d 2h left', '       Night Owls 12,400 · Rivals 11,980.5', '       /duel guild view ACT001', '',
+  'HISTORY', 'Won vs Rivals · +25 gold each · 13,200–12,100', '',
+  'Declare one: /duel guild @guild-slug 5 25', '', `Open guild duels: ${origin}/duels?tab=guild`].join('\n'))
+const guildView = formatDuelReply({ kind: 'guildView', duel: guildDuel(), origin }, now)
+assert.match(guildView, /^GUILD DUEL \[G7KM2P\] · Competitive · Picking rosters · expires in 6d\nNight Owls vs Rivals · 3v3 · 7d · 25 gold each · pot 150 gold\n\nNight Owls · ready 1\/3\n  You \(@me\) · ✓ ready\n  @bob · ○ selected\n\nRivals · ready 2\/3\n  No members selected yet\./)
+assert.doesNotMatch(guildView, /@old/, 'Removed members are hidden')
+assert.match(guildView, /\/duel guild roster G7KM2P add @handle   \/duel guild unready G7KM2P   \/duel guild cancel G7KM2P\n\nhttps:\/\/guildbyte\.test\/duels\/guild\/G7KM2P$/)
+const liveGuild = formatDuelReply({ kind: 'guildView', duel: guildDashboard.active[0], origin }, now)
+assert.match(liveGuild, /Night Owls · total 12,400\n/)
+assert.match(formatDuelReply({ kind: 'guildUpdated', action: 'declare', duel: guildDuel({ status: 'proposed' }), origin }, now), /^Guild duel \[G7KM2P\] declared against Rivals · 3v3 · 7 days · 25 gold each\.\nTheir owner or a responder has 6d to accept\./)
+assert.match(formatDuelReply({ kind: 'guildUpdated', action: 'add', handle: 'bob', duel: guildDuel(), origin }, now), /^Added @bob to the \[G7KM2P\] roster \(2\/3\)\. They confirm with \/duel guild ready G7KM2P/)
+assert.match(formatDuelReply({ kind: 'guildUpdated', action: 'ready', duel: guildDuel(), origin }, now), /^Ready for \[G7KM2P\] · 25 gold staked\. Ready 1\/3 — 2\/3\./)
+assert.match(formatDuelReply({ kind: 'guildUpdated', action: 'ready', duel: guildDuel({ status: 'active', endsAt: at(7 * 1440) }), origin }, now), /^Guild duel \[G7KM2P\] started! Night Owls vs Rivals · ends in 7d\./)
+assert.match(formatDuelReply({ kind: 'guildUpdated', action: 'cancel', duel: guildDuel({ status: 'cancelled' }), origin }, now), /^Cancelled guild duel \[G7KM2P\]\. Every reserved stake is refunded\./)
+assert.match(formatDuelReply({ kind: 'guildSetup', slug: 'rivals', dashboard: guildDashboard, origin }), /^Guild duel: Night Owls vs @rivals · 7 days\n[\s\S]*Send: \/duel guild @rivals 5 25/)
+assert.match(formatDuelReply({ kind: 'guildSetup', slug: 'rivals', dashboard: { ...guildDashboard, canDeclare: false }, origin }), /Only your guild owner or the Declare duels role/)
+assert.equal(formatDuelReply({ kind: 'confirm', action: 'guildReady', command: 'guild ready G7KM2P', lossGold: 150, allIn: false, message: null, origin }), 'You can lose 150 gold.\nConfirm: /duel guild ready G7KM2P confirm')
+
+// ---------- Request notices ----------
+const request = (extra = {}) => ({ request: { id: 'r1', code: 'Q7KM2P', kind: 'duel', from: 'alice', durationSeconds: 21600, wagerGold: 25, expiresAt: at(1380), webUrl: `${origin}/duels/Q7KM2P`, ...extra } })
+assert.equal(duelNoticeText(request(), now), `⚔ @alice challenges you · 6h · 25 gold wager · expires in 23h. /duel accept Q7KM2P · /duel decline Q7KM2P · ${origin}/duels/Q7KM2P`)
+assert.match(duelNoticeText(request({ kind: 'lobby', wagerGold: 0, expiresAt: null }), now), /^⚔ @alice invites you to a free-for-all · 6h · exhibition\. \/duel accept Q7KM2P/)
+assert.match(duelNoticeText(request({ kind: 'guild_challenge', from: 'Rivals', durationSeconds: 604800 }), now), /^⚔ Rivals challenges your guild · 7 days · 25 gold each · expires in 23h\. \/duel guild accept Q7KM2P · \/duel guild decline Q7KM2P/)
+assert.match(duelNoticeText(request({ kind: 'guild_roster', from: 'Rivals', code: null, id: 'abc' }), now), /picked for the guild duel against Rivals[\s\S]*\/duel guild ready abc · \/duel guild decline-selection abc/)
 assert.equal(formatDuelReply({ kind: 'error', error: 'Guildbyte: Pair Guildbyte first', setupUrl: '/setup?next=/duels/Q7KM2P', origin }), `Guildbyte: Pair Guildbyte first\nFinish setup: ${origin}/setup?next=/duels/Q7KM2P`)
 assert.match(formatDuelReply({ kind: 'setup', handles: ['alice'], origin, dashboard }, now), /^Challenge @alice\nEnergy 2\/3 · next \+1 in 4h · 340 gold\nDuration {2}1h 6h 1d 3d 7d\n[\s\S]*Send: \/duel @alice 6h 25/)
 assert.match(formatDuelReply({ kind: 'setup', handles: ['a1x', 'b2x'], origin, dashboard: { ...dashboard, wagersEnabled: false } }, now), /^Free-for-all with @a1x @b2x · 3 players[\s\S]*wagers are not open yet[\s\S]*Send: \/duel @a1x @b2x 6h 0/)
 
-// ---------- Hook routing ----------
+// ---------- Command routing ----------
 assert.equal(DUEL_COMMAND.name, 'duel')
-const handlers = []
-const calls = []
-registerDuelCommands((event, filter, handler) => handlers.push({ event, filter, handler }), async (_, action, usage, target) => {
-  calls.push([action, usage, target])
-  return { connected: true, duel: { kind: 'guild', origin } }
-})
-assert.deepEqual(handlers.map(h => [h.event, h.filter.command]), [['command.run', 'duel']])
-const handler = handlers[0].handler
-assert.equal((await handler({}, { args: '@alice 2h 5' })).text, 'Durations are 1h, 6h, 1d, 3d and 7d.', 'Usage errors answer without the worker')
-assert.equal(calls.length, 0)
-assert.match((await handler({}, { args: '  guild  ' })).text, /tab=guild/)
-assert.deepEqual(calls, [['duel', undefined, 'guild']], 'The worker receives the raw arguments')
-const busy = []
-registerDuelCommands((event, filter, h) => busy.push(h), async () => undefined)
-assert.match((await busy[0]({}, { args: '' })).text, /syncing/)
-const failing = []
-registerDuelCommands((event, filter, h) => failing.push(h), async () => ({ error: 'Guildbyte is offline. Activity remains saved locally.' }))
-assert.match((await failing[0]({}, {})).text, /offline/)
+assert.equal(duelUsage('@alice 2h 5'), 'Durations are 1h, 6h, 1d, 3d and 7d.', 'Usage errors answer without the worker')
+assert.equal(duelUsage('help'), DUEL_USAGE)
+assert.equal(duelUsage('  guild  '), null)
+assert.equal(duelUsage('guild roster Q7KM2P add @alice'), null)
+assert.match(duelUsage('guild ready'), /^Use \/duel guild ready <code>/)
+assert.match(duelFailure(undefined), /syncing/)
+assert.match(duelFailure({ error: 'Guildbyte is offline. Activity remains saved locally.' }), /offline/)
 
-console.log('Duel format checks passed: parser, dashboard, view, mutations, confirmations, previews, energy, link, errors and hook routing')
+console.log('Duel format checks passed: parser, dashboard, view, mutations, confirmations, previews, energy, link, errors, guild commands, request notices and command routing')

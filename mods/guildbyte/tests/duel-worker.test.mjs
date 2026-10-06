@@ -18,6 +18,11 @@ const summary = (extra = {}) => ({ id: randomUUID(), code: 'Q7KM2P', url: '/duel
   participants: [{ handle: 'me', href: '/players/me', seat: 0, role: 'creator', state: 'joined', hero: null, score: null, rank: null, outcome: null, payoutGold: 0, lastSyncedAt: null, isYou: true },
     { handle: 'alice', href: '/players/alice', seat: 1, role: 'invitee', state: 'invited', hero: null, score: null, rank: null, outcome: null, payoutGold: 0, lastSyncedAt: null, isYou: false }],
   you: { seated: true, canAccept: false, canDecline: false, canJoin: false, canLeave: false, canCancel: true, canForfeit: false, energyCost: 1, confirm: confirm() }, ...extra })
+const guildSide = (which, name) => ({ side: which, guild: { id: `${which}-id`, name, slug: name.toLowerCase() }, total: null, outcome: null, readyCount: 0, roster: [] })
+const guildSummary = (extra = {}) => ({ id: randomUUID(), code: 'G7KM2P', url: '/duels/guild/G7KM2P', rulesVersion: 2, mode: 'competitive', status: 'rostering', endedReason: null, invalidatedReason: null,
+  teamSize: 3, durationSeconds: 604800, wagerGold: 150, potGold: 900, proposedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 6 * 86400000).toISOString(), startsAt: null, endsAt: null,
+  settlesAt: null, settledAt: null, provisional: false, winner: null, sides: [guildSide('challenger', 'Owls'), guildSide('defender', 'Rivals')],
+  you: { side: 'challenger', canAccept: false, canDecline: false, canCancel: true, canEditRoster: true, canReady: true, canUnready: false, canDeclineSelection: true, confirm: confirm(150) }, ...extra })
 const energy = { available: 2, reserved: 1, max: 3, nextAt: new Date(Date.now() + 3600000).toISOString(), price: 1000, canPurchase: true }
 
 // Mock app: records every call and answers from `state`.
@@ -54,6 +59,13 @@ const server = createServer(async (request, response) => {
     case 'POST /api/duels/energy/purchase': return send({ energy: { ...energy, available: 3, reserved: 0, nextAt: null, canPurchase: false }, gold: state.gold - 1000 })
     case 'GET /api/duels/link': return send(state.link)
     case 'PUT /api/duels/link': state.link = { ...state.link, ...payload, url: null }; return send(state.link)
+    case 'GET /api/guild-duels/me': return send({ guild: { id: 'challenger-id', name: 'Owls', slug: 'owls' }, incoming: [], outgoing: [], rostering: [guildSummary()], active: [], history: [], record: { wins: 1, losses: 0, draws: 0 }, canDeclare: true, canRespond: true })
+    case 'POST /api/guild-duels': return send(guildSummary({ status: 'proposed', teamSize: payload.teamSize, wagerGold: payload.wagerGold }), 201)
+    case 'GET /api/guild-duels/G7KM2P': return send(guildSummary())
+    case 'POST /api/guild-duels/G7KM2P/roster': return send(guildSummary({ sides: [{ ...guildSide('challenger', 'Owls'), roster: [{ handle: payload.handle, href: '', state: 'selected', hero: null, contribution: null, payoutGold: 0, lastSyncedAt: null, isYou: false }] }, guildSide('defender', 'Rivals')] }))
+    case 'POST /api/guild-duels/G7KM2P/ready': return send(guildSummary({ status: 'active', endsAt: new Date(Date.now() + 7 * 86400000).toISOString() }))
+    case 'POST /api/guild-duels/G7KM2P/accept': case 'POST /api/guild-duels/G7KM2P/decline': case 'POST /api/guild-duels/G7KM2P/cancel':
+    case 'POST /api/guild-duels/G7KM2P/unready': case 'POST /api/guild-duels/G7KM2P/decline-selection': return send(guildSummary())
     case 'POST /api/duels/link/regenerate': return send({ ...state.link, url: '/duels/challenge/newtoken' })
   }
   send({ error: `No mock for ${key}` }, 404)
@@ -210,10 +222,38 @@ try {
   assert.deepEqual(route(regenerated.calls), ['POST /api/duels/link/regenerate'])
   assert.match(regenerated.text, new RegExp(`Share: ${origin}/duels/challenge/newtoken`))
 
-  // Guild commands point to the web for now; usage errors never call the app.
-  const guild = await duel('guild ready Q7KM2P')
-  assert.equal(guild.calls.length, 0)
-  assert.match(guild.text, /tab=guild/)
+  // Guild duels: dashboard, declare (with the large-stake confirmation), roster, ready and answers.
+  const guildBoard = await duel('guild')
+  assert.deepEqual(route(guildBoard.calls), ['GET /api/guild-duels/me'])
+  assert.match(guildBoard.text, /^GUILD DUELS · Owls · Record 1W 0L 0D[\s\S]*ROSTER LOBBIES\n\[G7KM2P\] vs Rivals/)
+  const guildSetup = await duel('guild @rivals')
+  assert.equal(guildSetup.result.kind, 'guildSetup')
+  assert.deepEqual(route(guildSetup.calls), ['GET /api/guild-duels/me'])
+  const bigDeclare = await duel('guild @rivals 3 150')
+  assert.equal(bigDeclare.calls.length, 0, 'A stake over 100 asks before declaring')
+  assert.match(bigDeclare.text, /Each selected member stakes 150 gold when they press Ready\.\nConfirm: \/duel guild @rivals 3 150 confirm/)
+  const declared = await duel('guild @rivals 3 150 confirm')
+  assert.deepEqual(declared.calls.map(call => [call.method, call.path, { ...call.body, requestId: typeof call.body.requestId }]), [['POST', '/api/guild-duels', { opponentGuild: 'rivals', teamSize: 3, wagerGold: 150, requestId: 'string' }]])
+  assert.match(declared.text, /^Guild duel \[G7KM2P\] declared against Rivals · 3v3/)
+  const added = await duel('guild roster G7KM2P add @Alice')
+  assert.deepEqual(added.calls.map(call => [call.path, call.body]), [['/api/guild-duels/G7KM2P/roster', { action: 'add', handle: 'alice' }]])
+  assert.match(added.text, /^Added @alice to the \[G7KM2P\] roster \(1\/3\)/)
+  assert.equal((await duel('guild roster G7KM2P')).result.kind, 'guildRoster')
+  const readyAsk = await duel('guild ready G7KM2P')
+  assert.deepEqual(route(readyAsk.calls), ['GET /api/guild-duels/G7KM2P'], 'Ready reads the stake confirmation first')
+  assert.equal(readyAsk.text, 'You can lose 150 gold\nConfirm: /duel guild ready G7KM2P confirm')
+  const ready = await duel('guild ready G7KM2P confirm')
+  assert.deepEqual(ready.calls[1], { method: 'POST', path: '/api/guild-duels/G7KM2P/ready', body: { confirmLoss: 150 }, auth: `Bearer ${bearer}`, type: 'application/json' })
+  assert.match(ready.text, /^Guild duel \[G7KM2P\] started!/)
+  for (const action of ['accept', 'decline', 'cancel', 'unready', 'decline-selection']) {
+    const answered = await duel(`guild ${action} G7KM2P`)
+    assert.deepEqual(answered.calls.map(call => `${call.method} ${call.path} ${JSON.stringify(call.body)}`), [`POST /api/guild-duels/G7KM2P/${action} {}`])
+    assert.equal(answered.result.action, action)
+  }
+  state.failNext = { status: 404, body: {} }
+  assert.equal((await duel('guild view G7KM2P')).text, 'Guildbyte returned 404: guild duel not found, you have no guild, or this server has no guild duels yet.')
+  const guildUsage = await duel('guild ready')
+  assert.equal(guildUsage.calls.length, 0, 'Usage errors never call the app')
   const bad = await duel('@alice 6h -1')
   assert.equal(bad.calls.length, 0)
   assert.equal(bad.result.kind, 'error')
@@ -238,7 +278,7 @@ try {
   assert.equal(offline.status.error, 'Guildbyte is offline. Activity remains saved locally.')
   state.offline = false
 
-  console.log('Duel worker checks passed: GET support, dashboard, view, challenges, confirmations, all-in, lobby, accept, decline, cancel, leave, forfeit, join, energy, link and errors')
+  console.log('Duel worker checks passed: GET support, dashboard, view, challenges, confirmations, all-in, lobby, accept, decline, cancel, leave, forfeit, join, energy, link, guild duels and errors')
 } finally {
   await new Promise(resolve => server.close(resolve))
   rmSync(directory, { recursive: true, force: true })

@@ -11,6 +11,7 @@ export const MAX_WAGER = 200000000
 export const MAX_OPPONENTS = 7
 
 const HANDLE = /^@?[a-z0-9_]{3,24}$/i
+const GUILD_SLUG = /^@?[a-z0-9-]{3,32}$/i
 const CODE = /^[0-9A-HJKMNP-TV-Z]{6}$/
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i
 const TOKEN = /^[A-Za-z0-9_-]{16,128}$/
@@ -26,6 +27,12 @@ export const DUEL_USAGE = [
   '  /duel view|accept|decline|cancel|leave|forfeit <code>',
   '  /duel energy [buy]                 Battle Energy',
   '  /duel link [on|off|1h…7d|regenerate]  your public exhibition link',
+  'Guild duels (7 days, rosters of 2-10)',
+  '  /duel guild                        your guild\'s duels and record',
+  '  /duel guild @rivals 5 25           declare: team size, stake per member',
+  '  /duel guild view|accept|decline|cancel <code>',
+  '  /duel guild roster <code> [add|remove @handle]',
+  '  /duel guild ready|unready|decline-selection <code>',
   'Durations: 1h 6h 1d 3d 7d. Wagers: a whole number or all. Add confirm (over 100 gold) and allin (whole balance) when asked.',
 ].join('\n')
 
@@ -67,7 +74,7 @@ export function parseDuelCommand(args = '') {
   const [head, ...tail] = lower
   if (!head) return { kind: 'dashboard' }
   if (head === 'help') return usage(null)
-  if (head === 'guild') return { kind: 'guild' }
+  if (head === 'guild') return parseGuildCommand(words.slice(1), tail)
   if (['view', 'accept', 'decline', 'cancel', 'leave', 'forfeit'].includes(head)) {
     const { rest, confirm, allIn } = flags(tail)
     const id = duelId(words[1])
@@ -127,6 +134,39 @@ export function parseDuelCommand(args = '') {
     return usage(`Use /duel ${handles.map(handle => '@' + handle).join(' ')} <1h|6h|1d|3d|7d> <wager>, for example /duel @${handles[0]} 6h 25.`)
   }
   return { kind: 'challenge', handles, durationSeconds, wager: amount, confirm, allIn, raw: [...handles.map(handle => '@' + handle), ...options].join(' ') }
+}
+
+const GUILD_ACTIONS = { view: 'guildView', accept: 'guildAccept', decline: 'guildDecline', cancel: 'guildCancel', ready: 'guildReady', unready: 'guildUnready', 'decline-selection': 'guildDeclineSelection' }
+export const GUILD_SIZES = [2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+// `/duel guild …`. Subcommand names win over guild slugs; prefix a slug with @
+// (`/duel guild @view`) to challenge a guild named like a subcommand.
+function parseGuildCommand(words, lower) {
+  const [head, ...tail] = lower
+  if (!head) return { kind: 'guildDashboard' }
+  if (GUILD_ACTIONS[head]) {
+    const { rest, confirm, allIn } = flags(tail)
+    const id = duelId(words[1])
+    if (!id || rest.length !== 1) return usage(`Use /duel guild ${head} <code>, for example /duel guild ${head} Q7KM2P.`)
+    if ((confirm || allIn) && head !== 'ready') return usage(`/duel guild ${head} takes no confirmation.`)
+    return { kind: GUILD_ACTIONS[head], id, ...(head === 'ready' ? { confirm, allIn } : {}) }
+  }
+  if (head === 'roster') {
+    const id = duelId(words[1])
+    const action = tail[1]
+    if (id && tail.length === 1) return { kind: 'guildRosterView', id }
+    if (!id || !['add', 'remove'].includes(action) || tail.length !== 3 || !HANDLE.test(tail[2])) return usage('Use /duel guild roster <code> add|remove @handle, for example /duel guild roster Q7KM2P add @alice.')
+    return { kind: 'guildRoster', id, action, handle: tail[2].replace(/^@/, '') }
+  }
+  if (!GUILD_SLUG.test(head)) return usage(`"${words[0]}" is not a guild or /duel guild command.\n${DUEL_USAGE}`)
+  const slug = head.replace(/^@/, '')
+  const { rest, confirm, allIn } = flags(tail)
+  if (allIn) return usage('Guild duels take a fixed stake per member: no allin.')
+  if (!rest.length && !confirm) return { kind: 'guildSetup', slug }
+  const teamSize = /^(?:[2-9]|10)$/.test(rest[0] ?? '') ? Number(rest[0]) : null
+  const amount = rest[1] === undefined || rest[1] === 'all' ? null : wager(rest[1])
+  if (!teamSize || amount === null || rest.length !== 2) return usage(`Use /duel guild @${slug} <team size 2-10> <stake per member>, for example /duel guild @${slug} 5 25.`)
+  return { kind: 'guildChallenge', slug, teamSize, wager: amount, confirm, raw: ['guild', '@' + slug, ...rest].join(' ') }
 }
 
 // ---------- Rendering helpers ----------
@@ -462,6 +502,188 @@ function setupText(result, origin, now) {
   return lines.join('\n')
 }
 
+// ---------- Guild duels ----------
+
+const GUILD_STATUS = { proposed: 'Waiting for a reply', rostering: 'Picking rosters', active: 'Active', completed: 'Completed', draw: 'Draw', cancelled: 'Cancelled', expired: 'Expired', invalidated: 'Invalidated' }
+const ROSTER_STATE = { selected: '○ selected', ready: '✓ ready', declined: '✗ declined' }
+const guildName = side => clean(side?.guild?.name, 40) || 'Unknown guild'
+const roster = side => list(side?.roster).filter(member => member.state !== 'removed')
+const teamLabel = duel => duel?.teamSize ? `${duel.teamSize}v${duel.teamSize}` : 'guild duel'
+const guildStake = duel => duel?.mode === 'competitive' ? `${gold(duel.wagerGold)} each` : duel?.mode === 'legacy' ? 'legacy' : 'exhibition'
+
+// [ours, theirs]: the caller's side first, by `you.side`, else by guild id.
+function guildSides(duel, guildId) {
+  const sides = list(duel?.sides)
+  const mine = duel?.you?.side ?? sides.find(side => side?.guild?.id === guildId)?.side
+  const ours = sides.find(side => side?.side === mine)
+  return ours ? [ours, sides.find(side => side !== ours)] : [sides[0], sides[1]]
+}
+
+function guildActions(duel) {
+  const allowed = duel?.you
+  if (!allowed) return []
+  const id = ref(duel)
+  const confirm = allowed.confirm ?? {}
+  const hints = []
+  if (allowed.canAccept) hints.push(`/duel guild accept ${id}`)
+  if (allowed.canDecline) hints.push(`/duel guild decline ${id}`)
+  if (allowed.canEditRoster) hints.push(`/duel guild roster ${id} add @handle`)
+  if (allowed.canReady) hints.push(`/duel guild ready ${id}${confirm.lossGold ? ' confirm' : ''}${confirm.allIn ? ' allin' : ''}`)
+  if (allowed.canUnready) hints.push(`/duel guild unready ${id}`)
+  if (allowed.canDeclineSelection) hints.push(`/duel guild decline-selection ${id}`)
+  if (allowed.canCancel) hints.push(`/duel guild cancel ${id}`)
+  return hints
+}
+
+const totals = (ours, theirs) => `${guildName(ours)} ${points(ours?.total)} · ${guildName(theirs)} ${points(theirs?.total)}`
+
+function guildResultLine(duel, guildId) {
+  const [ours, theirs] = guildSides(duel, guildId)
+  const versus = `vs ${guildName(theirs)}`
+  if (duel.status === 'invalidated') return `Void ${versus} · stakes refunded`
+  if (['cancelled', 'expired'].includes(duel.status)) return `${duel.status === 'expired' ? 'Expired' : 'Cancelled'} ${versus}${count(duel.wagerGold) ? ' · stakes refunded' : ''}`
+  const outcome = ours?.outcome ?? (duel.status === 'draw' ? 'draw' : null)
+  const label = { won: 'Won', lost: 'Lost', draw: 'Draw' }[outcome] ?? 'Ended'
+  let money = ''
+  if (duel.mode === 'competitive') money = outcome === 'won' ? `+${gold(duel.wagerGold)} each` : outcome === 'lost' ? `-${gold(duel.wagerGold)} each` : outcome === 'draw' ? 'stakes refunded' : ''
+  return [`${label} ${versus}`, duel.mode === 'exhibition' ? 'exhibition' : money, `${points(ours?.total)}–${points(theirs?.total)}`].filter(Boolean).join(' · ')
+}
+
+function guildCard(duel, guildId, now) {
+  const [ours, theirs] = guildSides(duel, guildId)
+  const head = `${tag(duel)} vs ${guildName(theirs)} · ${teamLabel(duel)}`
+  if (duel.status === 'active') {
+    const left = until(duel.endsAt, now)
+    return [`${head} · ${left ? `${left} left` : 'settling'}`, `       ${totals(ours, theirs)}`]
+  }
+  if (duel.status === 'proposed' || duel.status === 'rostering') {
+    const expires = until(duel.expiresAt, now)
+    const ready = duel.status === 'rostering' && duel.teamSize ? ` · ready ${count(ours?.readyCount)}/${duel.teamSize} — ${count(theirs?.readyCount)}/${duel.teamSize}` : ''
+    return [`${head} · ${guildStake(duel)}${ready}${expires ? ` · expires in ${expires}` : ''}`]
+  }
+  return [`${tag(duel)} ${guildResultLine(duel, guildId)}`]
+}
+
+function guildDashboardText(dashboard, origin, now) {
+  const guildId = dashboard.guild?.id
+  const record = dashboard.record ?? {}
+  const lines = [`GUILD DUELS · ${clean(dashboard.guild?.name, 40) || 'Your guild'} · Record ${count(record.wins)}W ${count(record.losses)}L ${count(record.draws)}D`]
+  const section = (label, duels, extra = () => []) => {
+    if (!duels.length) return
+    lines.push('', label)
+    for (const duel of duels) {
+      lines.push(...guildCard(duel, guildId, now))
+      const hints = extra(duel)
+      if (hints.length) lines.push(`       ${hints.join('   ')}`)
+    }
+  }
+  const hints = keep => duel => guildActions(duel).filter(hint => keep.some(word => hint.includes(` ${word} `)))
+  section('INCOMING', list(dashboard.incoming), hints(['accept', 'decline']))
+  section('SENT', list(dashboard.outgoing), hints(['cancel']))
+  section('ROSTER LOBBIES', list(dashboard.rostering), duel => {
+    const actions = hints(['ready', 'unready', 'decline-selection', 'cancel'])(duel)
+    return [...(duel.you?.canEditRoster ? [`/duel guild roster ${ref(duel)}`] : []), ...actions]
+  })
+  section('ACTIVE', list(dashboard.active), duel => [`/duel guild view ${ref(duel)}`])
+  const history = list(dashboard.history).slice(0, 5)
+  if (history.length) lines.push('', 'HISTORY', ...history.map(duel => guildResultLine(duel, guildId)))
+  if (!list(dashboard.incoming).length && !list(dashboard.outgoing).length && !list(dashboard.rostering).length && !list(dashboard.active).length) lines.push('', 'No open guild duels.')
+  if (dashboard.canDeclare) lines.push('', 'Declare one: /duel guild @guild-slug 5 25')
+  lines.push('', `Open guild duels: ${origin}/duels?tab=guild`)
+  return lines.join('\n')
+}
+
+function guildViewText(duel, origin, now) {
+  const mode = { competitive: 'Competitive', exhibition: 'Exhibition', legacy: 'Legacy' }[duel.mode] ?? 'Guild duel'
+  let timing = ''
+  if (duel.status === 'active') timing = until(duel.endsAt, now) ? ` · ${until(duel.endsAt, now)} left` : ' · settling'
+  else if (['proposed', 'rostering'].includes(duel.status) && until(duel.expiresAt, now)) timing = ` · expires in ${until(duel.expiresAt, now)}`
+  else if (duel.settledAt && since(duel.settledAt, now)) timing = ` · settled ${since(duel.settledAt, now)} ago`
+  const [ours, theirs] = guildSides(duel)
+  const stake = duel.mode === 'competitive' ? ` · ${gold(duel.wagerGold)} each · pot ${gold(duel.potGold)}` : duel.mode === 'exhibition' ? ' · no gold' : ''
+  const lines = [`GUILD DUEL ${tag(duel)} · ${mode} · ${GUILD_STATUS[duel.status] ?? clean(duel.status)}${timing}`,
+    `${guildName(ours)} vs ${guildName(theirs)} · ${teamLabel(duel)} · ${durationLabel(duel.durationSeconds)}${stake}`]
+  if (duel.invalidatedReason) lines.push(`Invalidated: ${clean(duel.invalidatedReason, 200)}. Every stake was refunded.`)
+  const live = ['active', 'completed', 'draw', 'invalidated'].includes(duel.status)
+  for (const side of [ours, theirs].filter(Boolean)) {
+    const members = roster(side)
+    lines.push('', [guildName(side), duel.teamSize && !live ? `ready ${count(side.readyCount)}/${duel.teamSize}` : null, live ? `total ${points(side.total)}` : null, live ? side.outcome : null].filter(Boolean).join(' · '))
+    if (!members.length) lines.push('  No members selected yet.')
+    for (const member of members) {
+      const parts = [`  ${member.isYou ? `You (${handle(member.handle)})` : handle(member.handle)}`]
+      if (live) parts.push(points(member.contribution))
+      else parts.push(ROSTER_STATE[member.state] ?? clean(member.state))
+      if (member.payoutGold) parts.push(`+${gold(member.payoutGold)}`)
+      if (duel.status === 'active' && since(member.lastSyncedAt, now)) parts.push(`synced ${since(member.lastSyncedAt, now)} ago`)
+      lines.push(parts.join(' · '))
+    }
+  }
+  if (duel.status === 'rostering') lines.push('', 'Starts automatically once both full rosters are ready; then rosters lock.')
+  if (duel.provisional) lines.push('', 'Provisional totals. Results settle 15 minutes after the timer ends (upload grace).')
+  const winner = list(duel.sides).find(side => side.side === duel.winner)
+  if (winner) lines.push('', `Winner: ${guildName(winner)}`)
+  const actions = guildActions(duel)
+  if (actions.length) lines.push('', actions.join('   '))
+  lines.push('', webLink(origin, duel.url, '/duels?tab=guild'))
+  return lines.join('\n')
+}
+
+function guildUpdatedText(result, origin, now) {
+  const duel = result.duel ?? {}
+  const id = ref(duel)
+  const [ours, theirs] = guildSides(duel)
+  const filled = roster(ours).length
+  const size = duel.teamSize ? `/${duel.teamSize}` : ''
+  const lines = []
+  switch (result.action) {
+    case 'declare':
+      lines.push(`Guild duel ${tag(duel)} declared against ${guildName(theirs)} · ${teamLabel(duel)} · 7 days · ${guildStake(duel)}.`)
+      lines.push(`Their owner or a responder has ${until(duel.expiresAt, now) ?? '7 days'} to accept. Pick your roster: /duel guild roster ${id} add @handle`)
+      break
+    case 'accept':
+      lines.push(`Accepted ${tag(duel)} against ${guildName(theirs)}. Both guilds now pick ${duel.teamSize ?? 'their'} members; it starts when every selected member is ready.`)
+      lines.push(`Pick your roster: /duel guild roster ${id} add @handle`)
+      break
+    case 'decline': lines.push(`Declined guild duel ${tag(duel)} from ${guildName(theirs)}.`); break
+    case 'cancel': lines.push(`Cancelled guild duel ${tag(duel)}.${count(duel.wagerGold) ? ' Every reserved stake is refunded.' : ''}`); break
+    case 'add': lines.push(`Added @${clean(result.handle, 40)} to the ${tag(duel)} roster (${filled}${size}). They confirm with /duel guild ready ${id}`); break
+    case 'remove': lines.push(`Removed @${clean(result.handle, 40)} from the ${tag(duel)} roster (${filled}${size}).`); break
+    case 'ready':
+      if (duel.status === 'active') lines.push(`Guild duel ${tag(duel)} started! ${guildName(ours)} vs ${guildName(theirs)} · ends in ${until(duel.endsAt, now) ?? '7d'}.`)
+      else lines.push(`Ready for ${tag(duel)}${duel.mode === 'competitive' ? ` · ${gold(duel.wagerGold)} staked` : ''}. Ready ${count(ours?.readyCount)}${size} — ${count(theirs?.readyCount)}${size}.`)
+      break
+    case 'unready': lines.push(`Not ready for ${tag(duel)}.${duel.mode === 'competitive' ? ' Your stake is released.' : ''}`); break
+    case 'decline-selection': lines.push(`You left the ${tag(duel)} roster.`); break
+  }
+  lines.push('', webLink(origin, duel.url, '/duels?tab=guild'))
+  return lines.join('\n')
+}
+
+function guildSetupText(result, origin) {
+  const dashboard = result.dashboard ?? {}
+  const lines = [`Guild duel: ${clean(dashboard.guild?.name, 40) || 'your guild'} vs @${clean(result.slug, 40)} · 7 days`]
+  if (dashboard.canDeclare === false) lines.push('Only your guild owner or the Declare duels role can declare guild duels.')
+  else lines.push('Team size  2 to 10 members per side', 'Stake      gold per member, 0 for an exhibition; winners receive twice their stake', `Send: /duel guild @${clean(result.slug, 40)} 5 25`)
+  lines.push('', `${origin}/duels?tab=guild`)
+  return lines.join('\n')
+}
+
+// One toast per new duel request from the heartbeat (rule 50).
+export function duelNoticeText(notice, now = Date.now()) {
+  const request = notice?.request ?? {}
+  const id = clean(request.code ?? request.id, 40)
+  const expires = until(request.expiresAt, now)
+  const stake = count(request.wagerGold) ? `${gold(request.wagerGold)}${request.kind?.startsWith('guild') ? ' each' : ' wager'}` : 'exhibition'
+  const tail = `${expires ? ` · expires in ${expires}` : ''}`
+  const link = request.webUrl ? ` · ${request.webUrl}` : ''
+  switch (request.kind) {
+    case 'guild_challenge': return `⚔ ${clean(request.from, 40)} challenges your guild · 7 days · ${stake}${tail}. /duel guild accept ${id} · /duel guild decline ${id}${link}`
+    case 'guild_roster': return `⚔ You were picked for the guild duel against ${clean(request.from, 40)} · ${stake}${tail}. /duel guild ready ${id} · /duel guild decline-selection ${id}${link}`
+    case 'lobby': return `⚔ ${handle(request.from)} invites you to a free-for-all · ${durationLabel(request.durationSeconds)} · ${stake}${tail}. /duel accept ${id} · /duel decline ${id}${link}`
+    default: return `⚔ ${handle(request.from)} challenges you · ${durationLabel(request.durationSeconds)} · ${stake}${tail}. /duel accept ${id} · /duel decline ${id}${link}`
+  }
+}
+
 // Renders a worker result ({kind, ..., origin}) as command text.
 export function formatDuelReply(result, now = Date.now()) {
   const origin = result?.origin ?? ''
@@ -473,7 +695,10 @@ export function formatDuelReply(result, now = Date.now()) {
     case 'preview': return previewText(result, origin, now)
     case 'energy': case 'energyConfirm': case 'energyBought': return energyText(result, origin, now)
     case 'link': return linkText(result, origin)
-    case 'guild': return `Guild duels are managed on the web for now.\n\n${origin}/duels?tab=guild`
+    case 'guildDashboard': return guildDashboardText(result.dashboard ?? {}, origin, now)
+    case 'guildSetup': return guildSetupText(result, origin)
+    case 'guildView': case 'guildRoster': return guildViewText(result.duel ?? {}, origin, now)
+    case 'guildUpdated': return guildUpdatedText(result, origin, now)
     case 'error': {
       const setup = result.setupUrl ? webLink(origin, result.setupUrl, null) : null
       return `${clean(result.error, 240) || 'Guildbyte could not complete that duel action.'}${setup ? `\nFinish setup: ${setup}` : ''}`

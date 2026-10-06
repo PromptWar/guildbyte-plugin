@@ -5,6 +5,7 @@
 import { CONFIRM_ABOVE, ENERGY_PRICE, parseDuelCommand } from './duel-format.mjs'
 
 const path = id => `/api/duels/${encodeURIComponent(id)}`
+const guildPath = id => `/api/guild-duels/${encodeURIComponent(id)}`
 
 // Optional confirmation fields: sent only when the player typed the token.
 function confirmations(command, lossGold) {
@@ -73,7 +74,33 @@ async function dispatch(command, api, requestId) {
       return { kind: 'link', link }
     }
     case 'linkRegenerate': return { kind: 'link', link: await api.post('/api/duels/link/regenerate', {}), regenerated: true }
-    case 'guild': return { kind: 'guild' }
+    case 'guildDashboard': return { kind: 'guildDashboard', dashboard: await api.get('/api/guild-duels/me') }
+    case 'guildSetup': return { kind: 'guildSetup', slug: command.slug, dashboard: await api.get('/api/guild-duels/me') }
+    case 'guildChallenge': {
+      // Every selected member stakes this amount at Ready; the declarer confirms large stakes up front.
+      if (command.wager > CONFIRM_ABOVE && !command.confirm) {
+        return { kind: 'confirm', action: 'guildChallenge', command: command.raw, wagerGold: command.wager, lossGold: command.wager, allIn: false,
+          message: `Each selected member stakes ${command.wager} gold when they press Ready.` }
+      }
+      const duel = await api.post('/api/guild-duels', { opponentGuild: command.slug, teamSize: command.teamSize, wagerGold: command.wager, requestId })
+      return { kind: 'guildUpdated', action: 'declare', duel }
+    }
+    case 'guildView': return { kind: 'guildView', duel: await api.get(guildPath(command.id)) }
+    case 'guildRosterView': return { kind: 'guildRoster', duel: await api.get(guildPath(command.id)) }
+    case 'guildRoster':
+      return { kind: 'guildUpdated', action: command.action, handle: command.handle, duel: await api.post(`${guildPath(command.id)}/roster`, { action: command.action, handle: command.handle }) }
+    case 'guildReady': {
+      const duel = await api.get(guildPath(command.id))
+      const confirm = duel?.you?.confirm
+      if (missingConfirmation(command, confirm)) {
+        return { kind: 'confirm', action: 'guildReady', command: `guild ready ${command.id}`, lossGold: confirm.lossGold, allIn: confirm.allIn, message: confirm.message }
+      }
+      return { kind: 'guildUpdated', action: 'ready', duel: await api.post(`${guildPath(command.id)}/ready`, confirmations(command, confirm?.lossGold)) }
+    }
+    case 'guildAccept': case 'guildDecline': case 'guildCancel': case 'guildUnready': case 'guildDeclineSelection': {
+      const action = { guildAccept: 'accept', guildDecline: 'decline', guildCancel: 'cancel', guildUnready: 'unready', guildDeclineSelection: 'decline-selection' }[command.kind]
+      return { kind: 'guildUpdated', action, duel: await api.post(`${guildPath(command.id)}/${action}`, {}) }
+    }
     default: return { kind: 'error', error: 'Unknown /duel command. Run /duel help.' }
   }
 }
@@ -87,7 +114,8 @@ export async function runDuelCommand(args, api, requestId) {
   catch (failure) {
     if (!Number.isInteger(failure?.status)) throw failure
     if (failure.status === 401) return { kind: 'error', error: 'Guildbyte: your connection expired. Run /guildbyte-connect, then try again.' }
-    const error = failure.detail ? failure.message : `Guildbyte returned ${failure.status}${failure.status === 404 ? ': duel not found, or this server has no Duels yet' : ''}.`
+    const missing = command.kind.startsWith('guild') ? ': guild duel not found, you have no guild, or this server has no guild duels yet' : ': duel not found, or this server has no Duels yet'
+    const error = failure.detail ? failure.message : `Guildbyte returned ${failure.status}${failure.status === 404 ? missing : ''}.`
     return { kind: 'error', status: failure.status, error, ...(failure.setupUrl ? { setupUrl: failure.setupUrl } : {}) }
   }
 }
