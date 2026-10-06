@@ -1,23 +1,23 @@
-# Guildbyte 0.2.5
+# Guildbyte 0.3.0
 
 A standard Claude Code plugin installs the mod automatically. Its `AbovePrompt` hook displays your pinned animated Guildbyte character, with a Connect account button and fallback mage when the current account is unpaired or disconnected; no separate mod installation is needed. Requirements: Claude Code 2.1.287+ and Node 22.13+ (built-in SQLite). Implementation follows the [Claude mods guide](https://claude.dev/blog/getting-started-with-claude-code-mods/) and the installed runtime's generated types.
 
 ## Connect and test locally
 
-Start the sibling Guildbyte app and apply `db/013_claude_activity.sql` once to its existing database. Then:
+Start the sibling Guildbyte app. Existing databases need migrations `020`, `030`, `031`, and `032`; a fresh Compose database applies them automatically. Then:
 
 ```bash
 claude plugin marketplace add PromptWar/guildbyte-plugin
-claude plugin install guildbyte@guildbyte --scope user --config appUrl=http://localhost:3000 --config importHistory=true
+claude plugin install guildbyte@guildbyte --scope user --config appUrl=http://localhost:3000
 ```
 
-Run `/reload-plugins` or start a new session, then `/guildbyte-connect`. Sign into Guildbyte in the opened browser and claim the ten-minute code. The mod polls the exchange and begins sending numeric batches. `/guildbyte-sync` retries manually. Sign into another Claude subscription, start a new session, and use `/guildbyte-connect` again to link it to the same Guildbyte user. Manage accounts in `/settings`.
+Run `/reload-plugins` or start a new session, then `/guildbyte-connect`. Sign into Guildbyte in the opened browser and claim the ten-minute code. The mod polls the exchange and begins collecting the running session from that moment. `/guildbyte-sync` retries manually. Sign into another Claude subscription, start a new session, and use `/guildbyte-connect` again to link it to the same Guildbyte user. Manage accounts in `/settings`.
 
 On older developer builds, function hooks may need `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`; validation and runtime tests here used Claude 2.1.283 with that flag. Terminal/desktop visuals still need a manual live-session check on 2.1.287+.
 
 ## Sync and reinstall behavior
 
-Every active Claude session scans its persisted local JSONL transcripts on activation, prompt submission, completed turns, and every ten seconds. A session UUID identifies main and sidechain files; assistant message IDs identify per-request usage. Newline checkpoints tolerate interrupted writes. Concurrent sessions share SQLite with transactional writes. Uploads contain up to 100 counts and 50 percentage readings per account per cycle, with live activity first; large archives import over multiple cycles. Offline batches stay queued.
+Every paired Claude session scans its own persisted JSONL transcript (main and sidechain files, identified by the session UUID) on activation, prompt submission, completed turns, and every ten seconds. Assistant message IDs identify per-request usage. Newline checkpoints tolerate interrupted writes. Concurrent sessions share SQLite with transactional writes. Uploads contain up to 100 counts and 50 percentage readings per account per cycle. Offline batches stay queued.
 
 Activity uploads contain only numeric observations, IDs, timestamps, account UUID, reported plan, and the model family of each request (`fable`, `opus`, `sonnet`, `haiku`, or `unknown` for any other model), never the prompt. The family is derived locally from the transcript's `message.model`; the raw model id is not stored or uploaded, and the field is only attached to the four token observations. Explicit `/kiss` requests also send the recipient handle; the recipient receives your Guildbyte name, guild and pinned character. No prompt text, code, tool arguments, paths, email, or Claude credentials are uploaded. Keystroke events only reset a local activity timestamp; their text is never retained or uploaded. Claude login identity comes from `claude auth status --json` and the identity fields in Claude's config. API-key authentication is unsupported. Plans and metrics are client-reported, not verified subscription billing.
 
@@ -25,13 +25,23 @@ Local state is stored outside the plugin cache at `~/.claude/guildbyte/<app-orig
 
 Heartbeat requests run every ten seconds while Claude is active. The app considers an installation online for two minutes after its last heartbeat or batch. No heartbeat means offline, not proof of uninstall. The app polls status every fifteen seconds; setup notices disappear after pairing and remain hidden for previously paired offline installations. Installation tokens expire after ninety days. A 401 clears that account's local token, retains queued data, and asks for `/guildbyte-connect`. Reconnecting replaces expired presence for that account without increasing account count. Other linked accounts may still need reauthentication.
 
-## History and duel windows
+## Live collection starts at pairing
 
-The first activation records a cutoff and scans available local history before uploading. Old transcripts do not identify the subscription that produced them: they stay unassigned locally and upload through the first linked account with `source: history`. Imported history appears in lifetime metrics and is excluded from all time-window calculations. Files from another running session are held at their first live record until that session's worker can attribute them.
+Only activity accepted after a successful pairing counts. The worker records the time each Claude account first pairs and collects nothing before it: no earlier transcripts, no other session's files, and no records that the running session wrote before pairing. Without a pairing nothing is queued. Upgrading from 0.2.x keeps the original collection start of already-paired accounts and drops queued history and unpaired backlog that would otherwise upload. The `importHistory` option is ignored and kept only so existing install commands still work. A 401 keeps queued post-pairing activity for the reconnect.
 
-Token observations use input, output, cache-read, and cache-write counts per assistant request, not the session's context-size gauge. Each of these four counts carries the request's model family so the app can score duels per model; older app servers ignore the field. Progressive snapshots of the same message are merged by maximum value and latest timestamp. The final observed snapshot time assigns a request to `[starts_at, ends_at)`; a request spanning a boundary is not split into a fabricated per-token timeline. Duel settlement retains the app's fifteen-minute upload grace period. Queued live records older than seven days become archival history; old readings are discarded. Already settled duels are not reopened for late data.
+Token observations use input, output, cache-read, and cache-write counts per assistant request, not the session's context-size gauge. Each of these four counts carries the request's model family so the app can score duels per model; older app servers ignore the field. Progressive snapshots of the same message are merged by maximum value and latest timestamp. The final observed snapshot time assigns a request to `[starts_at, ends_at)`; a request spanning a boundary is not split into a fabricated per-token timeline. Duel settlement retains the app's fifteen-minute upload grace period. Queued live records older than seven days upload as archival history; old readings are discarded. Already settled duels are not reopened for late data.
 
-The app derives current and longest consecutive-day streaks from prompt dates across all linked accounts, including imported history. Each UTC day counts once; opening Claude or heartbeats alone do not qualify. View streaks in `/settings` or authenticated `GET /api/activity/streak`. No separate plugin counter is needed.
+## Daily gauge, rewards and league notices
+
+The app is authoritative for progression. Every successful observation upload and heartbeat may return a `progression` snapshot (`localDay`, `timeZone`, `effectiveTokens`, `streak { current, longest, multiplier }`, `rewards { gold, chest } { unlocked, claimed }`, `nextThreshold`, `expiresAt`, and optionally `league { division }`, `leagueChange { id, kind, from, to }` and a same-origin `claimUrl` path). The worker validates it, drops unknown or malformed optional fields, keeps the last good snapshot when a response is invalid, and lets the newest local day (then the later expiry) win. It is cached per account in the local database. The plugin computes no thresholds, multipliers, timezones or claim rules; the gauge fills toward the server's `nextThreshold`.
+
+The `AbovePrompt` band shows the cached gauge from session start: `Daily ▰▰▰▰▰▱▱▱▱▱ 8.2M/15M · streak 4 ×1.020`, then one reward icon and a `Claim in Guildbyte ↗` link (default `/leaderboard`) while a reward is unlocked and unclaimed: a yellow coin for gold, replaced by a small chest once the Daily Chest is claimable. If the chest is claimed first, the coin returns until gold is claimed too. Kitty terminals draw it left of the companion; other terminals add it above the status line. The gauge redraws only when what it shows changes. The chest hops between two half-block frames every 500ms, and stays still when Claude's `prefersReducedMotion` setting is on. At `expiresAt` (the next local midnight) the snapshot is no longer shown and every icon clears. A claim in the web app clears its icon on the next sync. The plugin never claims rewards.
+
+Each reward unlock (per local day) and each `leagueChange` id produces one toast, deduplicated across every session that shares the database, and nothing repeats while the state is unchanged. Unlock toasts link to the app. Reward unlocks and promotions appear as soon as a sync returns them; promotions are celebratory (`★ Promoted to Gold II! ★`, plus the companion's victory emote). A demotion is never shown mid-session: the worker queues it quietly in the local database and the first sync of the next Claude session start shows a short `League update: now Silver I.` once. A later league change replaces a queued demotion, and a promotion drops it. `/guildbyte-status` does not consume the queue. There is no final-warning notification before expiry.
+
+`/guildbyte-status` prints the cached snapshot without contacting the server: day and timezone, effective tokens and the next threshold, streak and multiplier, league, each reward's state, and the claim link and deadline.
+
+The app derives current and longest consecutive-day streaks itself. Opening Claude or heartbeats alone do not qualify. No separate plugin counter is needed.
 
 Limit counters require a real failure: context-window overflow, or a rate-limit failure plus an exhausted five-hour/seven-day reading. Merely approaching 100% does not count. The same account's rate-limit reset window is counted once.
 
@@ -49,6 +59,7 @@ The companion accepts validated animation frames from the app's fitted pixel-cha
 
 ```bash
 node --no-warnings mods/guildbyte/tests/worker.test.mjs
+node mods/guildbyte/tests/progression.test.mjs
 node mods/guildbyte/tests/companion-animation.test.mjs
 node mods/guildbyte/tests/companion-motion.test.mjs
 claude plugin test mods/guildbyte

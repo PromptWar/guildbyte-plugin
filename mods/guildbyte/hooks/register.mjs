@@ -1,7 +1,10 @@
 import { COMPANION_STATES, companionFrame, companionActivity,visitPose } from '../scripts/companion-animation.mjs'
+import { gaugeText, noticeText, rewardIcon, statusReport, visibleSignature } from '../scripts/progression.mjs'
 
 const statusKey = { plugin: 'guildbyte', key: 'status' }
 const motionKey = { plugin: 'guildbyte', key: 'motion' }
+const progressionKey = { plugin: 'guildbyte', key: 'progression' }
+const chestKey = { plugin: 'guildbyte', key: 'chest' }
 
 let options = {}
 let failures = []
@@ -9,6 +12,7 @@ let running = false
 let sessionId
 let timer
 let motionTimer
+let bounceTimer
 let companion
 let activity = companionActivity()
 let travelLimit = 12
@@ -16,6 +20,9 @@ let imageSite,currentPose
 let lastPose
 let visitor,visitStarted=0,completedVisits=[]
 let visitorTarget=9,visitorLimit=24
+let shownProgression,reducedMotion=false,chestPhase=0
+// Set at session start until a sync completes; queued demotions show only then.
+let startPending=false
 
 async function animate($) {
   const now=Date.now()
@@ -53,11 +60,32 @@ async function animate($) {
   }
 }
 
+// The chest hops between two half-block frames while a reward is claimable;
+// with reduced motion it stays still.
+async function bounce($) {
+  const phase=!reducedMotion && rewardIcon(shownProgression?.value)==='chest' ? 1-chestPhase : 0
+  if(phase!==chestPhase) {chestPhase=phase;await $.state.set(chestKey,phase)}
+}
+
+// The gauge redraws only when what it shows changes; notices arrive once.
+async function showProgression($,status) {
+  const progression=status.connected ? status.progression ?? null : null
+  const signature=visibleSignature(progression)
+  if(signature!==shownProgression?.signature) {
+    shownProgression={signature,value:progression}
+    await $.state.set(progressionKey,progression)
+  }
+  for(const notice of status.notices ?? []) {
+    $.ui.toast(noticeText(notice),{timeoutMs:notice.kind==='demotion' ? 4000 : 8000})
+    if(notice.kind==='promotion') {activity.preview('victory',Date.now());await animate($)}
+  }
+}
+
 function stopTimers() {
-  for(const handle of [timer,motionTimer]) {
+  for(const handle of [timer,motionTimer,bounceTimer]) {
     if(typeof handle==='function')handle();else handle?.cancel()
   }
-  timer=motionTimer=undefined
+  timer=motionTimer=bounceTimer=undefined
 }
 
 async function worker($, action = 'sync', usage,target) {
@@ -65,14 +93,17 @@ async function worker($, action = 'sync', usage,target) {
   running = true
   try {
     sessionId ??= await $.session.id()
-    const sentFailures = failures.slice()
-    const sentVisits=completedVisits.slice()
+    // The status action reads the cache only, so it neither sends nor clears queued reports.
+    const sentFailures = action==='status' ? [] : failures.slice()
+    const sentVisits=action==='status' ? [] : completedVisits.slice()
+    const starting=action!=='status' && startPending
     const result = await $.process.run(['node', '--no-warnings', `${$.plugin.root}/scripts/worker.mjs`], {
-      stdin: JSON.stringify({ action, sessionId, appUrl: options.appUrl ?? 'http://localhost:3000', importHistory: options.importHistory !== false, usage, failures: sentFailures,completedVisits:sentVisits,...(target ? {target} : {}) }),
+      stdin: JSON.stringify({ action, sessionId, appUrl: options.appUrl ?? 'http://localhost:3000', usage, failures: sentFailures,completedVisits:sentVisits,...(starting ? {sessionStart:true} : {}),...(target ? {target} : {}) }),
       timeoutMs: 25000,
     })
     if (result.exitCode !== 0) throw new Error('Guildbyte needs Node 22.13+ and access to its local sync database.')
     const status = JSON.parse(result.stdout)
+    if (starting) startPending=false
     companion = status.connected ? status.character?.animation : null
     if(!status.connected)visitor=undefined
     else if(status.visit && status.visit.id!==visitor?.id && !completedVisits.includes(status.visit.id) && Date.parse(status.visit.expiresAt)>Date.now()) {
@@ -80,6 +111,7 @@ async function worker($, action = 'sync', usage,target) {
     }
     if (!status.error) {failures.splice(0,sentFailures.length);completedVisits=completedVisits.filter(id=>!sentVisits.includes(id))}
     await $.state.set(statusKey, status)
+    await showProgression($,status)
     return status
   } catch (error) {
     const { value = {} } = await $.state.get(statusKey)
@@ -97,6 +129,17 @@ async function showsPictures($) {
   return pictures
 }
 
+// One reward icon: the coin, replaced by the chest once the chest is claimable.
+// It stays until every reward is claimed or the day expires.
+function gaugeLine({Text,Link},progression,phase) {
+  const icon=rewardIcon(progression)
+  const children=[gaugeText(progression)]
+  if(icon==='gold')children.push('  ',Text({children:'◉ gold',color:'yellow'}))
+  if(icon==='chest')children.push('  ',Text({children:phase ? '▀▀' : '▄▄',color:'yellow'}),' chest')
+  if(icon)children.push(' · ',Link ? Link({href:progression.claimUrl,label:'Claim in Guildbyte ↗'}) : `Claim in Guildbyte: ${progression.claimUrl}`)
+  return Text({children,wrap:'truncate-end'})
+}
+
 function statusLine(status) {
   const who=status.player ? `@${status.player.handle} · ${String(status.player.points).replace(/\B(?=(\d{3})+(?!\d))/g,',')} pts` : 'Guildbyte'
   return `● ${who} · ${status.pending ? `${status.pending} waiting to sync` : 'capturing'}`
@@ -112,15 +155,19 @@ export function register(on, configuration = {}) {
   options = configuration
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    activity=companionActivity();lastPose=undefined;currentPose=imageSite=undefined
+    activity=companionActivity();lastPose=undefined;currentPose=imageSite=undefined;shownProgression=undefined;chestPhase=0;startPending=true
+    await $.state.set(chestKey,0)
+    try { reducedMotion=(await $.settings.read())?.prefersReducedMotion===true } catch { reducedMotion=false }
     await $.command.register({ name: 'guildbyte-connect', description: 'Link this Claude account to Guildbyte' })
     await $.command.register({ name: 'guildbyte-sync', description: 'Retry pending activity uploads' })
+    await $.command.register({ name: 'guildbyte-status', description: 'Show your daily gauge, streak and unclaimed rewards' })
     await $.command.register({name:'kiss',argumentHint:'<user_name>',description:'Send your character to kiss a player in their active Guildbyte session',immediate:true})
     for (const state of COMPANION_STATES) await $.command.register({ name: `guildbyte-${state}`, description: `Show your companion's ${state} pose` })
     await sync($)
     await animate($)
     timer ??= $.clock.every(10000, () => { void sync($) })
     motionTimer ??= $.clock.every(50, () => { void animate($) })
+    bounceTimer ??= $.clock.every(500, () => { void bounce($) })
     return result
   })
   on('session.end', async ($, e, next) => {
@@ -197,6 +244,10 @@ export function register(on, configuration = {}) {
     const status = await sync($)
     return { text: status?.error ?? `Guildbyte: ${status?.pending ?? 0} records waiting to sync.` }
   })
+  on('command.run', { command: 'guildbyte-status' }, async $ => {
+    const status = await worker($, 'status') ?? (await $.state.get(statusKey)).value
+    return { text: statusReport(status) }
+  })
   on('command.run',{command:'kiss'},async ($,e)=>{
     const target=e.args?.trim()
     if(!/^@?[a-z0-9_]{3,24}$/i.test(target ?? ''))return {text:'Use /kiss <Guildbyte handle>, for example /kiss @ayla.'}
@@ -210,12 +261,16 @@ export function register(on, configuration = {}) {
   })
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || e.props.maxRows===0) return next(e)
-    const { Box, Image, Button,Text } = $.ui.resolve(e)
+    const { Box, Image, Button,Text,Link } = $.ui.resolve(e)
     const { value: status = {} } = await $.state.get(statusKey)
+    const { value: progression = null } = await $.state.get(progressionKey)
+    const { value: phase = 0 } = await $.state.get(chestKey)
+    const gauge=status.connected && progression && Text ? gaugeLine({Text,Link},progression,phase) : null
     if (!(await showsPictures($))) {
       const line=status.connected ? Text?.({ children: statusLine(status), dimColor: true, wrap: 'truncate-end' }) : Button?.({ label: 'Connect account', onPress: () => { void worker($, 'connect') } })
       if (!line) return next(e)
-      return Box({ width: e.props.bodyColumns, height: 1, flexDirection: 'row', justifyContent: 'flex-end', paddingRight: 1, children: [line] })
+      const lines=gauge && (e.props.maxRows ?? 5)>1 ? [gauge,line] : [line]
+      return Box({ width: e.props.bodyColumns, height: lines.length, flexDirection: 'column', alignItems: 'flex-end', paddingRight: 1, children: lines })
     }
     const { value: savedPose = { frame: 0, offset: 0, facing: 'right', state: 'idle' } } = await $.state.get(motionKey)
     const pose=currentPose ?? savedPose
@@ -228,6 +283,9 @@ export function register(on, configuration = {}) {
     visitorLimit=Math.max(visitorTarget,Math.min(24,width-columns-home))
     const children = []
     if (!status.connected && Button) children.push(Button({ label: 'Connect account', onPress: () => { void worker($, 'connect') } }))
+    // The gauge sits left of the companion's walking range.
+    const gaugeWidth=width-columns-travelLimit-home-2
+    if (gauge && gaugeWidth>=12) children.push(Box({position:'absolute',left:0,bottom:0,width:gaugeWidth,height:1,flexDirection:'row',justifyContent:'flex-end',children:[gauge]}))
     const png = (pose.facing==='left' ? status.character?.animation?.mirroredFrames?.[pose.frame] : null) ?? status.character?.animation?.frames[pose.frame] ?? status.character?.png
     if (Image) {
       const image=Image({ key:'companion', source: status.connected && png ? { png } : { file: `${$.plugin.root}/assets/mage.png`, format: 'png' }, columns, rows, alt: status.connected && status.character ? `Your Guildbyte character: ${pose.state ?? 'idle'}` : 'Guildbyte pixel-art mage' })

@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { join, basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { validateAnimation } from './companion-animation.mjs'
+import { validateProgression, isNewer, fresh, claimable } from './progression.mjs'
 
 export function stableId(value) {
   const hash = createHash('sha256').update(`guildbyte-v1:${value}`).digest('hex')
@@ -51,10 +52,25 @@ export function openDatabase(directory) {
   const columns = db.prepare('PRAGMA table_info(events)').all().map(column => column.name)
   if (!columns.includes('model')) db.exec('ALTER TABLE events ADD COLUMN model TEXT')
   db.prepare("INSERT OR IGNORE INTO metadata VALUES ('cutoff', ?)").run(new Date().toISOString())
+  // Only activity after pairing is collected. Accounts paired before this rule
+  // keep their original collection start; unassigned history never uploads.
+  const cutoff = getMeta(db, 'cutoff')
+  for (const { id } of db.prepare("SELECT id FROM accounts WHERE token IS NOT NULL OR id IN (SELECT substr(key, 8) FROM metadata WHERE key LIKE 'reauth:%')").all())
+    db.prepare('INSERT OR IGNORE INTO metadata VALUES (?, ?)').run(`paired-at:${id}`, cutoff)
+  db.exec(`DELETE FROM events WHERE account_id IS NULL OR synced=0 AND account_id NOT IN
+    (SELECT substr(key, 11) FROM metadata WHERE key LIKE 'paired-at:%')`)
   return db
 }
 const getMeta = (db, key) => db.prepare('SELECT value FROM metadata WHERE key = ?').get(key)?.value
 const setMeta = (db, key, value) => db.prepare('INSERT INTO metadata VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, value)
+const pairedAt = (db, accountId) => accountId ? getMeta(db, `paired-at:${accountId}`) : undefined
+
+// Live collection starts at the first successful pairing; earlier activity,
+// including earlier records of the running session, is never queued.
+export function markPaired(db, accountId, at = new Date().toISOString()) {
+  db.prepare('INSERT OR IGNORE INTO metadata VALUES (?, ?)').run(`paired-at:${accountId}`, at)
+  db.prepare('DELETE FROM events WHERE account_id=? AND synced=0 AND at < ?').run(accountId, pairedAt(db, accountId))
+}
 
 function accountIdentity() {
   const status = JSON.parse(execFileSync('claude', ['auth', 'status', '--json'], { encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] }))
@@ -86,17 +102,14 @@ export function saveEvent(db, event) {
     event.resetsAt ?? null, event.kind ?? 'counter', event.source ?? 'live', event.accountId ?? null, event.model ?? null)
 }
 
-export function ingestRecord(db, record, accountId, importHistory = true) {
+export function ingestRecord(db, record, accountId) {
   const sessionId = record.sessionId
   const date = new Date(record.timestamp)
   if (!isUuid(sessionId) || !Number.isFinite(date.getTime()) || date.getTime() > Date.now() + 300000) return
   const at = date.toISOString()
-  const historical = at <= getMeta(db, 'cutoff')
-  if (historical && !importHistory) return
-  const source = historical ? 'history' : 'live'
-  const owner = historical ? null : accountId
-  if (!historical && !owner) return // Never assign another running account's activity to this account.
-  const put = (identity, key, value, model) => saveEvent(db, { id: stableId(identity + ':' + key), sessionId, at, key, value, source, accountId: owner, ...(model ? { model } : {}) })
+  const since = pairedAt(db, accountId)
+  if (!since || at < since) return // Unpaired, or before pairing: never collected.
+  const put = (identity, key, value, model) => saveEvent(db, { id: stableId(identity + ':' + key), sessionId, at, key, value, source: 'live', accountId, ...(model ? { model } : {}) })
   const message = record.message ?? {}
   if (!record.isSidechain && record.type === 'user' && !record.isMeta && !record.isSynthetic && record.uuid) {
     const content = message.content
@@ -139,7 +152,7 @@ function transcriptFiles(directory) {
 }
 
 // Incremental reads end at a complete newline; interrupted JSON lines are retried.
-export function scanFile(db, file, accountId, importHistory) {
+export function scanFile(db, file, accountId) {
   const size = statSync(file).size
   let offset = db.prepare('SELECT offset FROM files WHERE path=?').get(file)?.offset ?? 0
   if (size < offset) offset = 0
@@ -160,7 +173,6 @@ export function scanFile(db, file, accountId, importHistory) {
   db.exec('BEGIN IMMEDIATE')
   try {
     let consumed = 0
-    let blocked = false
     let start = 0
     if (getMeta(db, `oversized:${file}`) === 'true') {
       start = bytes.subarray(0,complete).indexOf(10)+1
@@ -169,17 +181,12 @@ export function scanFile(db, file, accountId, importHistory) {
     }
     for (const line of bytes.subarray(start, complete).toString('utf8').split('\n').slice(0, -1)) {
       if (!line) { consumed += 1; continue }
-      try {
-        const record = JSON.parse(line)
-        if (!accountId && new Date(record.timestamp).toISOString() > getMeta(db, 'cutoff')) { blocked = true; break }
-        ingestRecord(db, record, accountId, importHistory)
-      } catch { /* Skip malformed local records, never print their contents. */ }
+      try { ingestRecord(db, JSON.parse(line), accountId) }
+      catch { /* Skip malformed local records, never print their contents. */ }
       consumed += Buffer.byteLength(line) + 1
     }
     db.prepare('INSERT INTO files VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET offset=excluded.offset').run(file, offset + consumed)
-    setMeta(db, `blocked:${file}`, String(blocked))
     db.exec('COMMIT')
-    if (blocked) return false
   } catch (error) { db.exec('ROLLBACK'); throw error }
   return offset + complete < size
 }
@@ -203,8 +210,9 @@ export function snapshotReadings(db, account, sessionId, usage) {
 }
 
 export function saveFailures(db, account, sessionId, failures, usage) {
+  const since = pairedAt(db, account.id)
   for (const failure of failures ?? []) {
-    if (!Number.isFinite(Date.parse(failure.at))) continue
+    if (!Number.isFinite(Date.parse(failure.at)) || !since || new Date(failure.at).toISOString() < since) continue
     if (failure.kind === 'context' && typeof failure.id === 'string') {
       saveEvent(db,{id:stableId(`context-limit:${sessionId}:${failure.id}`),sessionId,at:failure.at,key:'context_limit_hit_count',value:1,accountId:account.id})
     }
@@ -231,8 +239,6 @@ async function request(origin, path, data, token) {
 }
 
 export async function upload(db, origin, session) {
-  // Historical records are unassigned: the first linked account uploads them as local history.
-  const first = db.prepare('SELECT id FROM accounts WHERE token IS NOT NULL ORDER BY rowid LIMIT 1').get()?.id
   for (const account of db.prepare('SELECT * FROM accounts WHERE token IS NOT NULL').all()) {
     const active=session?.accountId===account.id && isUuid(session.sessionId)
     const heartbeatKey = `heartbeat:${account.id}${active ? ':'+session.sessionId : ''}`
@@ -242,6 +248,7 @@ export async function upload(db, origin, session) {
       try {
         const response=await request(origin, '/api/installations/heartbeat', active ? {sessionId:session.sessionId,acknowledgedVisits} : {}, account.token)
         saveCompanion(db, account.id, response)
+        saveProgression(db, account.id, response)
         if(active) {
           saveVisit(db,account.id,session.sessionId,response)
           // Remove only acknowledgements sent in this request; another worker
@@ -257,10 +264,11 @@ export async function upload(db, origin, session) {
         continue
       }
     }
-    const query = `SELECT * FROM events WHERE synced=0 AND kind=? AND (account_id=? OR (account_id IS NULL AND ?=?)) ORDER BY (source='live') DESC, at LIMIT ?`
-    const counters = db.prepare(query).all('counter', account.id, account.id, first ?? '', 100)
+    const query = `SELECT * FROM events WHERE synced=0 AND kind=? AND account_id=? AND at >= ? ORDER BY (source='live') DESC, at LIMIT ?`
+    const since = pairedAt(db, account.id) ?? new Date().toISOString()
+    const counters = db.prepare(query).all('counter', account.id, since, 100)
     db.prepare("UPDATE events SET synced=1 WHERE kind='reading' AND at < ?").run(new Date(Date.now() - 7 * 86400000).toISOString())
-    const readings = db.prepare(query).all('reading', account.id, account.id, first ?? '', 50)
+    const readings = db.prepare(query).all('reading', account.id, since, 50)
     const sent = [...counters, ...readings]
     if (!sent.length) continue
     const payload = {
@@ -268,7 +276,7 @@ export async function upload(db, origin, session) {
         source: event.source === 'live' && Date.parse(event.at) < Date.now() - 7 * 86400000 ? 'history' : event.source, ...(event.model ? { model: event.model } : {}) })),
       readings: readings.map(event => ({ id: event.id, at: event.at, key: event.key, value: event.value, resetsAt: event.resets_at })),
     }
-    try { await request(origin, '/api/observations', payload, account.token) }
+    try { saveProgression(db, account.id, await request(origin, '/api/observations', payload, account.token)) }
     catch (error) {
       if (error.status !== 401) throw error
       db.prepare('UPDATE accounts SET token=NULL,installation_id=NULL WHERE id=?').run(account.id)
@@ -297,6 +305,53 @@ export function saveCompanion(db, accountId, response) {
   if(player===null)setMeta(db,`player:${accountId}`,'null')
   else if(player && typeof player.handle==='string' && /^[a-z0-9_]{1,40}$/i.test(player.handle) && Number.isSafeInteger(player.points) && player.points>=0)
     setMeta(db,`player:${accountId}`,JSON.stringify({handle:player.handle,points:player.points}))
+}
+
+// Caches the server's progression snapshot. Invalid, absent or older snapshots
+// keep the last good one.
+export function saveProgression(db, accountId, response, now = Date.now()) {
+  const snapshot = validateProgression(response?.progression, now)
+  if (!snapshot) return
+  const cached = JSON.parse(getMeta(db, `progression:${accountId}`) ?? 'null')
+  if (isNewer(snapshot, cached, now)) setMeta(db, `progression:${accountId}`, JSON.stringify(snapshot))
+}
+
+export function cachedProgression(db, accountId, origin, now = Date.now()) {
+  const snapshot = fresh(JSON.parse(getMeta(db, `progression:${accountId}`) ?? 'null'), now)
+  if (!snapshot) return null
+  const { claimPath, ...rest } = snapshot
+  return { ...rest, claimUrl: origin + claimPath }
+}
+
+// Each reward unlock and league change is announced once, across every
+// session sharing this database. Rewards and promotions are immediate. A
+// demotion is queued quietly and delivered only at the next Claude session
+// start; a later league change replaces it.
+export function takeNotices(db, accountId, progression, sessionStart = false) {
+  const key = `notified:${accountId}`, queueKey = `queued-notices:${accountId}`
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    const notified = JSON.parse(getMeta(db, key) ?? '[]')
+    const queued = JSON.parse(getMeta(db, queueKey) ?? '[]')
+    let queue = queued
+    const notices = []
+    for (const reward of claimable(progression)) {
+      const id = `${progression.localDay}:${reward}`
+      if (!notified.includes(id)) notices.push({ id, kind: 'reward', reward, claimUrl: progression.claimUrl })
+    }
+    const change = progression?.leagueChange
+    if (change && !notified.includes(`league:${change.id}`)) {
+      const notice = { id: `league:${change.id}`, kind: change.kind, from: change.from, to: change.to, claimUrl: progression.claimUrl }
+      if (change.kind === 'demotion') queue = [notice]
+      else { queue = []; notices.push(notice) }
+    }
+    const announced = [...notices, ...(queue !== queued ? queue : [])].map(notice => notice.id)
+    if (announced.length) setMeta(db, key, JSON.stringify([...notified, ...announced].slice(-50)))
+    if (sessionStart && queue.length) { notices.unshift(...queue); queue = [] }
+    if (queue !== queued) setMeta(db, queueKey, JSON.stringify(queue))
+    db.exec('COMMIT')
+    return notices
+  } catch (error) { db.exec('ROLLBACK'); throw error }
 }
 
 export function saveVisit(db,accountId,sessionId,response) {
@@ -333,9 +388,17 @@ export async function run(input, dependencies = {}) {
     account = dependencies.account ?? accountIdentity()
     db.prepare('INSERT INTO accounts(id,plan) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET plan=excluded.plan').run(account.id, account.plan)
     let active = db.prepare('SELECT * FROM accounts WHERE id=?').get(account.id)
+    // Status reads only the cached authoritative snapshot; no network, no scan.
+    if (input.action === 'status') {
+      try { return summary(db, account, input.sessionId, origin) } finally { db.close() }
+    }
     if (input.action === 'connect') {
       if (active.token) {
-        try { saveCompanion(db, account.id, await request(origin, '/api/installations/heartbeat', {}, active.token)) }
+        try {
+          const response = await request(origin, '/api/installations/heartbeat', {}, active.token)
+          saveCompanion(db, account.id, response)
+          saveProgression(db, account.id, response)
+        }
         catch (failure) {
           if (failure.status !== 401) throw failure
           db.prepare('UPDATE accounts SET token=NULL,installation_id=NULL WHERE id=?').run(account.id)
@@ -362,6 +425,7 @@ export async function run(input, dependencies = {}) {
         if (!isUuid(linked.installationId) || typeof linked.token !== 'string' || linked.token.length < 32) throw new Error('Invalid Guildbyte connection response.')
         db.prepare('UPDATE accounts SET token=?,installation_id=?,pairing=NULL WHERE id=?').run(linked.token, linked.installationId, pending.id)
         setMeta(db, `reauth:${pending.id}`, 'false')
+        markPaired(db, pending.id)
       } catch (failure) { if (failure.status !== 404) throw failure }
     }
     if(input.action==='kiss') {
@@ -379,38 +443,43 @@ export async function run(input, dependencies = {}) {
         setMeta(db,seenKey,JSON.stringify([...new Set([...JSON.parse(getMeta(db,seenKey) ?? '[]'),...completed])].slice(-20)))
       }
     }
-    // History is scanned on first activation before any upload. Only the active
-    // session (including its sidechains) is assigned to the currently signed-in account.
-    const files = transcriptFiles(account.projects).sort((a,b) => Number(basename(b) === `${input.sessionId}.jsonl` || b.includes(`${input.sessionId}/`)) - Number(basename(a) === `${input.sessionId}.jsonl` || a.includes(`${input.sessionId}/`)))
-    const scanStarted = Date.now()
+    // Only the running session (including its sidechains) is collected, and
+    // only from the moment this account paired. Other sessions' transcripts
+    // and earlier history are never imported.
     let remaining = false
-    let processed = 0
-    for (const file of files) {
-      const activeSession = basename(file) === `${input.sessionId}.jsonl` || file.includes(`${input.sessionId}/`)
-      if (!activeSession && getMeta(db, `blocked:${file}`) === 'true') continue
-      const size = statSync(file).size
-      const cursor = db.prepare('SELECT offset FROM files WHERE path=?').get(file)?.offset ?? 0
-      if (size === cursor) continue
-      if (processed++ >= 30 || Date.now()-scanStarted > 6000) { remaining = true; continue }
-      remaining = scanFile(db, file, activeSession ? account.id : null, input.importHistory !== false) || remaining
+    if (pairedAt(db, account.id) && isUuid(input.sessionId)) {
+      const scanStarted = Date.now()
+      let processed = 0
+      for (const file of transcriptFiles(account.projects)) {
+        if (basename(file) !== `${input.sessionId}.jsonl` && !file.includes(`${input.sessionId}/`)) continue
+        const cursor = db.prepare('SELECT offset FROM files WHERE path=?').get(file)?.offset ?? 0
+        if (statSync(file).size === cursor) continue
+        if (processed++ >= 30 || Date.now()-scanStarted > 6000) { remaining = true; continue }
+        remaining = scanFile(db, file, account.id) || remaining
+      }
+      saveEvent(db,{id:stableId(`session:${input.sessionId}:session_count`),sessionId:input.sessionId,at:new Date().toISOString(),key:'session_count',value:1,accountId:account.id})
+      snapshotReadings(db, account, input.sessionId, input.usage)
+      saveFailures(db,account,input.sessionId,input.failures,input.usage)
     }
     setMeta(db, 'historyComplete', String(!remaining))
-    if (isUuid(input.sessionId)) saveEvent(db,{id:stableId(`session:${input.sessionId}:session_count`),sessionId:input.sessionId,at:new Date().toISOString(),key:'session_count',value:1,accountId:account.id})
-    snapshotReadings(db, account, input.sessionId, input.usage)
-    saveFailures(db,account,input.sessionId,input.failures,input.usage)
     await upload(db, origin,{sessionId:input.sessionId,accountId:account.id})
   } catch (failure) { error = failure.message?.includes('Guildbyte') || failure.message?.startsWith('Sign in') ? failure.message : 'Guildbyte is offline. Activity remains saved locally.' }
-  try { return { ...summary(db, account,input.sessionId), ...(kiss ? {kiss} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) } }
+  try {
+    const result = summary(db, account, input.sessionId, origin)
+    const notices = result.connected ? takeNotices(db, account.id, result.progression, input.sessionStart === true) : []
+    return { ...result, ...(notices.length ? { notices } : {}), ...(kiss ? {kiss} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) }
+  }
   finally { db.close() }
 }
 
-function summary(db, account,sessionId) {
+function summary(db, account,sessionId,origin) {
   const connected = Boolean(account && db.prepare('SELECT token FROM accounts WHERE id=?').get(account.id)?.token)
   const visit=connected && isUuid(sessionId) ? JSON.parse(getMeta(db,`visit:${account.id}:${sessionId}`) ?? 'null') : null
   const seen=visit ? JSON.parse(getMeta(db,`visit-seen:${account.id}:${sessionId}`) ?? '[]') : []
   return {
     connected, plan: account?.plan ?? 'Claude',
-    ...(connected ? { character: JSON.parse(getMeta(db, `character:${account.id}`) ?? 'null'), player: JSON.parse(getMeta(db, `player:${account.id}`) ?? 'null') } : {}),
+    ...(connected ? { character: JSON.parse(getMeta(db, `character:${account.id}`) ?? 'null'), player: JSON.parse(getMeta(db, `player:${account.id}`) ?? 'null'),
+      progression: cachedProgression(db, account.id, origin), progressionCached: getMeta(db, `progression:${account.id}`) !== undefined } : {}),
     visit:visit && Date.parse(visit.expiresAt)>Date.now() && !seen.includes(visit.id) ? visit : null,
     accountCount: db.prepare('SELECT count(*) AS n FROM accounts WHERE token IS NOT NULL').get().n,
     pending: db.prepare('SELECT count(*) AS n FROM events WHERE synced=0').get().n,
