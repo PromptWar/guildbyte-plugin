@@ -38,7 +38,8 @@ export function companionActivity(now = Date.now()) {
     mode(value,id) { if(turn!==id)return false;const changed=working!==value;working=value;return changed },
     finish(id,at) { if(turn!==id)return;turn=undefined;lastActivity=at },
     preview(value,at) { manual=value==='idle' ? undefined : value;lastActivity=at;state=undefined },
-    snapshot(at,limit=12,canMirror=true) {
+    snapshot(at,limit=12,canMirror=true,paused=false) {
+      if(paused){started+=Math.max(0,at-previous);previous=at;return {state,elapsed:Math.max(0,at-started),offset:position,facing:direction>0 ? 'left' : 'right'}}
       const desired=manual ?? (turn ? working : at-lastActivity>=90000 ? 'sleep' : at-lastActivity>=20000 ? 'sit' : 'idle')
       const distance=Math.max(0,Math.min(12,limit)),step=Math.max(0,Math.min(250,at-previous))*1.6/1000
       previous=at;position=Math.min(position,distance)

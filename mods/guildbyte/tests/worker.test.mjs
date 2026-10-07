@@ -42,6 +42,12 @@ const server = createServer(async (request, response) => {
     if(payload.acknowledgedVisits?.includes(visit?.id) && !holdAcknowledgement)visit=null
     response.statusCode=expire ? 401 : 200; response.end(JSON.stringify({connected:!expire,character,visit:payload.sessionId===sessionId ? visit : null})); return
   }
+  if(request.url==='/api/companion/evolve'){
+    assert.equal(payload.characterId,character.id)
+    if(payload.level!==character.level){response.statusCode=409;response.end(JSON.stringify({error:'Guildbyte: hero changed'}));return}
+    character={...character,level:character.level+1,nextLevelAt:400,canLevelUp:false}
+    response.end(JSON.stringify({character,levelUp:{id:randomUUID(),heroId:character.heroId,version:1,fromLevel:payload.level,toLevel:character.level,frames:Array(18).fill(pixelPng),durations:Array(18).fill(100),durationMs:1800}}));return
+  }
   if(request.url==='/api/companion/level-up'){
     assert.equal(request.headers.authorization,'Bearer '+'x'.repeat(48));evolutions.push(payload)
     response.end(JSON.stringify({levelUp:{id:randomUUID(),heroId:payload.heroId??character.heroId??'cash_cow_solopreneur',version:1,fromLevel:payload.fromLevel,toLevel:payload.toLevel,frames:Array(18).fill(pixelPng),durations:[80,...Array(16).fill(90),120],durationMs:1640}}));return
@@ -222,11 +228,18 @@ try {
   assert.equal(selected.character.heroId,'cash_cow_solopreneur','Preview cannot replace pinned hero')
   assert.deepEqual(evolutions.at(-1),{fromLevel:1,toLevel:3,heroId:'iris_archon'})
   assert((await run({...input,action:'levelup',toLevel:6},dependencies)).error.includes('[1-5]'))
+  character={...character,level:1,xp:100,canLevelUp:true,nextLevelAt:100}
+  db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
+  const earned=await run({...input,action:'evolve',characterId:character.id,level:1},dependencies)
+  assert.equal(earned.character.level,2);assert.equal(earned.character.xp,100);assert.equal(earned.character.canLevelUp,false)
+  assert.equal(earned.levelUp.toLevel,2)
+  const retry=await run({...input,action:'evolve',characterId:character.id,level:1},dependencies)
+  assert(retry.error);assert.equal(retry.character.level,2,'Stale manual requests never grant another level')
   const beforeAuto=evolutions.length
   character={...character,level:4}
   db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
   const automatic=await run({...input,action:'sync',observedCharacter:{id:character.id,level:1}},dependencies)
-  assert.equal(automatic.levelUp.toLevel,4);assert.equal(evolutions.length,beforeAuto+1)
+  assert.equal(automatic.levelUp,undefined,'Sync never triggers evolution automatically');assert.equal(evolutions.length,beforeAuto)
   assert.equal((await run({...input,action:'sync',observedCharacter:{id:character.id,level:4}},dependencies)).levelUp,undefined,'Observed evolution cannot replay every heartbeat')
   assert.equal((await run({...input,action:'sync',observedCharacter:{id:randomUUID(),level:1}},dependencies)).levelUp,undefined,'Pinning a different hero is not a level-up')
   character=null

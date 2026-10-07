@@ -6,7 +6,7 @@ export type GuildbyteStatus = {
   tokens: number
   prompts: number
   historyComplete: boolean
-  character?: {id:string;heroId?:string;level?:number} | null
+  character?: {id:string;heroId?:string;level?:number;xp?:number;nextLevelAt?:number;canLevelUp?:boolean} | null
   player?: {handle:string;points:number} | null
   levelUp?: {id:string;heroId:string;version:1;fromLevel:number;toLevel:number;renderScale?:1|1.5;durationMs:number}
   linkUrl?: string
@@ -17,6 +17,6 @@ export type GuildbyteStatus = {
 
 declare module 'claude-code' {
   interface PluginState {
-    guildbyte: { status: GuildbyteStatus; motion: { frame: number; state: string; offset: number; facing: 'left'|'right';visit?:{id:string;frame:number;state:string;offset:number;facing:string} } }
+    guildbyte: { status: GuildbyteStatus; motion: { frame: number; state: string; offset: number; facing: 'left'|'right';xp?:{amount:number;elapsed:number};visit?:{id:string;frame:number;state:string;offset:number;facing:string} } }
   }
 }

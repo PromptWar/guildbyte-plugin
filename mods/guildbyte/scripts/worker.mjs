@@ -288,8 +288,11 @@ function validatedCharacter(character) {
       !Buffer.from(character.png, 'base64').subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) return null
   const animation = validateAnimation(character.animation)
   if(character.level!==undefined && (!Number.isInteger(character.level)||character.level<1||character.level>5))return null
+  if(character.xp!==undefined && (!Number.isSafeInteger(character.xp)||character.xp<0||character.xp>1600))return null
+  if(character.canLevelUp!==undefined && typeof character.canLevelUp!=='boolean')return null
+  if(character.nextLevelAt!==undefined && (!Number.isSafeInteger(character.nextLevelAt)||character.nextLevelAt<100||character.nextLevelAt>1600))return null
   if(character.heroId!==undefined && (typeof character.heroId!=='string'||!/^[a-z0-9_]{1,80}$/.test(character.heroId)))return null
-  return { id: character.id, png: character.png, ...(character.level!==undefined?{level:character.level}:{}), ...(character.heroId?{heroId:character.heroId}:{}), ...(animation ? { animation } : {}) }
+  return { id: character.id, png: character.png, ...(character.xp!==undefined?{xp:character.xp}:{}),...(character.nextLevelAt!==undefined?{nextLevelAt:character.nextLevelAt}:{}),...(character.canLevelUp!==undefined?{canLevelUp:character.canLevelUp}:{}), ...(character.level!==undefined?{level:character.level}:{}), ...(character.heroId?{heroId:character.heroId}:{}), ...(animation ? { animation } : {}) }
 }
 
 // A session keeps artwork in memory; unchanged heartbeats carry only metadata.
@@ -297,7 +300,7 @@ function companionArt(character,knownRevision,includeArt) {
   if(!character)return {character:null,revision:null}
   const {png,animation,...metadata}=character
   if(!includeArt)return {character:metadata,revision:null}
-  const revision=createHash('sha256').update(JSON.stringify(character)).digest('hex')
+  const revision=createHash('sha256').update(JSON.stringify({id:character.id,png,animation})).digest('hex')
   if(revision===knownRevision)return {character:metadata,revision}
   return {character,revision,pixels:animationPixels(animation)}
 }
@@ -413,14 +416,22 @@ export async function run(input, dependencies = {}) {
     snapshotReadings(db, account, input.sessionId, input.usage)
     saveFailures(db,account,input.sessionId,input.failures,input.usage)
     await upload(db, origin,{sessionId:input.sessionId,accountId:account.id})
-    const current=summary(db,account,input.sessionId).character,observed=input.observedCharacter
-    const automatic=current && observed?.id===current.id && Number.isInteger(observed.level) && observed.level>=1 && observed.level<current.level
-    if(input.action==='levelup' || automatic){
+    const current=summary(db,account,input.sessionId).character
+    if(input.action==='evolve'){
+      const token=db.prepare('SELECT token FROM accounts WHERE id=?').get(account.id)?.token
+      if(!token || !current)throw Error('Guildbyte: connect and pin a hero before evolving.')
+      const response=await request(origin,'/api/companion/evolve',{characterId:input.characterId,level:input.level},token)
+      levelUp=validateLevelUp(response.levelUp)
+      if(!levelUp)throw Error('Guildbyte: invalid level-up animation response.')
+      if(response.character?.id!==input.characterId || !validatedCharacter(response.character))throw Error('Guildbyte: invalid evolved character response.')
+      saveCompanion(db,account.id,response)
+    }
+    if(input.action==='levelup'){
       const token=db.prepare('SELECT token FROM accounts WHERE id=?').get(account.id)?.token
       if(!token)throw Error('Guildbyte: run /guildbyte-connect before testing level-up.')
       if(!current)throw Error('Guildbyte: open a chest and pin a hero first.')
-      const fromLevel=automatic?observed.level:(current.level??1)
-      const toLevel=input.action==='levelup'?(input.toLevel??Math.min(5,fromLevel+1)):current.level
+      const fromLevel=current.level??1
+      const toLevel=input.toLevel??Math.min(5,fromLevel+1)
       if(!Number.isInteger(toLevel)||toLevel<1||toLevel>5)throw Error('Guildbyte: use /guildbyte-levelup [1-5].')
       if(input.heroId!==undefined && (typeof input.heroId!=='string'||!/^[a-z][a-z0-9_]{0,79}$/.test(input.heroId)))throw Error('Guildbyte: use /guildbyte-levelup [1-5] [hero_id].')
       const response=await request(origin,'/api/companion/level-up',{fromLevel,toLevel,...(input.action==='levelup'&&input.heroId?{heroId:input.heroId}:{})},token)
@@ -431,7 +442,7 @@ export async function run(input, dependencies = {}) {
   try {
     const status=summary(db,account,input.sessionId)
     const art=companionArt(status.character,input.artRevision,input.includeArt!==false),guest=companionArt(status.visit?.character,input.visitorArtRevision,input.includeArt!==false)
-    return { ...status,...(status.connected ? {character:art.character} : {}),...(status.visit ? {visit:{...status.visit,character:guest.character}} : {}),artRevision:art.revision,visitorArtRevision:guest.revision,...('pixels' in art ? {pixels:art.pixels} : {}),...('pixels' in guest ? {visitorPixels:guest.pixels} : {}), ...(kiss ? {kiss} : {}), ...(levelUp ? {levelUp} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) }
+    return { ...status,...(status.connected ? {character:art.character} : {}),...(status.visit ? {visit:{...status.visit,character:guest.character}} : {}),artRevision:art.revision,visitorArtRevision:guest.revision,...('pixels' in art ? {pixels:art.pixels} : {}),...('pixels' in guest ? {visitorPixels:guest.pixels} : {}), ...(kiss ? {kiss} : {}), ...(levelUp ? {levelUp,levelUpPixels:input.includeArt!==false ? animationPixels(levelUp) : null} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) }
   } finally { db.close() }
 }
 

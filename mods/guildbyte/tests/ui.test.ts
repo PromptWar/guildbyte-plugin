@@ -21,17 +21,16 @@ describe('Guildbyte companion', () => {
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' } as any)
     const ui = await $.ui.mount({ plugin: 'guildbyte', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, bodyColumns: 120, maxRows: 10 } } as any)
     expect(await ui.find({ type: 'Text' })).toBeUndefined()
-    expect(await ui.find({ type: 'Image' })).toBeDefined()
-    expect((await ui.find({ type: 'Image' }))?.props).toMatchObject({rows:4,columns:8})
+    expect(await ui.find({ type: 'Image' })).toBeUndefined()
     expect(await ui.find({ type: 'Button', text: /Connect account/ })).toBeDefined()
     await ui.unmount()
     isConnected = true
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' } as any)
     const connected = await $.ui.mount({ plugin: 'guildbyte', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, bodyColumns: 120, maxRows: 3 } } as any)
     expect((await connected.find({ type: 'Image' }))?.props.source).toEqual({ png: character.png })
-    expect((await connected.find({ type: 'Image' }))?.props.rows).toBe(3)
-    expect((await connected.find({ type: 'Image' }))?.props.columns).toBe(6)
-    expect((await connected.find({ type: 'Box' }))?.props).toMatchObject({ width: 120, height: 3, justifyContent: 'flex-end', alignItems: 'flex-end' })
+    expect((await connected.find({ type: 'Image' }))?.props.rows).toBe(2)
+    expect((await connected.find({ type: 'Image' }))?.props.columns).toBe(4)
+    expect((await connected.find({ type: 'Box' }))?.props).toMatchObject({ width: 120, height: 2, justifyContent: 'flex-end', alignItems: 'flex-end' })
     expect(await connected.find({ type: 'Text' })).toBeUndefined()
     expect(await connected.find({ type: 'Button' })).toBeUndefined()
     character = { ...character, png: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWNgYPj/HwADAgH/xCAAOgAAAABJRU5ErkJggg==' }
@@ -44,16 +43,16 @@ describe('Guildbyte companion', () => {
     pixels={width:128,height:128,frames:Array(28).fill(rgba),mirroredFrames:Object.fromEntries(Array.from({length:28},(_,i)=>[i,rgba]))}
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' } as any)
     expect((await connected.find({type:'Image'}))?.props.source).toEqual({png:character.png})
-    expect((await connected.find({type:'Image'}))?.props.columns).toBe(6)
+    expect((await connected.find({type:'Image'}))?.props.columns).toBe(4)
     omitArt=true
     await $.command.run({command:'guildbyte-sync',args:''} as any)
     expect((await connected.find({type:'Image'}))?.props.source).toEqual({png:character.png})
     await $.command.run({command:'guildbyte-walk',args:''} as any)
     const canvas=(await connected.find({type:'Image'}))?.props
-    expect(canvas.columns).toBe(18)
-    expect(canvas.source.width).toBe(384)
+    expect(canvas.columns).toBe(16)
+    expect(canvas.source.width).toBe(512)
     expect(canvas.source.height).toBe(128)
-    expect(atob(canvas.source.rgba).length).toBe(384*128*4)
+    expect(atob(canvas.source.rgba).length).toBe(512*128*4)
     await connected.unmount()
     isConnected = false
     omitArt=false
