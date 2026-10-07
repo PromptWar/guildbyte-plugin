@@ -1,5 +1,5 @@
 import {test,expect} from 'claude-code/testing'
-import {pixelCanvas} from '../scripts/companion-pixels.mjs'
+import {pixelCanvas,levelUpCanvas,xpCanvas} from '../scripts/companion-pixels.mjs'
 
 test('measure native canvas work',async()=>{
  const size=128*128*4,bytes=new Uint8Array(size)
@@ -11,4 +11,18 @@ test('measure native canvas work',async()=>{
  const elapsed=Date.now()-started
  console.log(JSON.stringify({canvasCalls:200,totalMs:elapsed,msPerCall:elapsed/200,bytesPerFrame:source.rgba.length,bytesPerSecondAt20FPS:source.rgba.length*20}))
  expect(source.width).toBe(320)
+})
+
+test('measure short-lived XP and aura overlays',async()=>{
+ const pixels={width:192,height:192,frames:[btoa('\0'.repeat(192*192*4))]}
+ const started=Date.now()
+ let xp:any,aura:any
+ for(let i=0;i<100;i++){
+  xp=xpCanvas(100,(i*50)%1800,8,12,(i*.08)%12,64)
+  aura=levelUpCanvas(pixels,0,'left',8,12,(i*.08)%12,192)
+ }
+ const elapsed=Date.now()-started
+ console.log(JSON.stringify({overlayPairs:100,totalMs:elapsed,msPerPair:elapsed/100,xpBytes:xp.rgba.length,auraBytes:aura.rgba.length}))
+ expect(xp.width).toBe(320);expect(xp.height).toBe(64)
+ expect(aura.width).toBe(352);expect(aura.height).toBe(192)
 })

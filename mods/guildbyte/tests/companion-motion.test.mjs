@@ -69,6 +69,7 @@ try {
   register((event,matcher,hook)=>{if(typeof matcher==='function'){hook=matcher;matcher={}}hooks.set(event+(matcher.command ? ':'+matcher.command : ''),hook)})
   const next=async e=>e
   await hooks.get('session.start')($,{},next)
+  await new Promise(resolve=>setImmediate(resolve))
   const tick=async at=>{now=at;timers.find(t=>t.ms===50).fn();await new Promise(resolve=>setImmediate(resolve))}
   await tick(90000)
   assert.equal(values.get('motion').state,'sleep')
@@ -95,9 +96,9 @@ try {
   assert.equal(larger.props.children[0].props.children[0].props.rows,4)
   assert.equal(larger.props.children[0].props.children[0].props.columns,20)
   const narrow=await hooks.get('ui.render')($,{props:{bodyColumns:4,maxRows:2}},next)
-  assert.equal(narrow.props.children[0].props.children[0].props.columns,4)
-  assert.equal(narrow.props.children[0].props.children[0].props.rows,2)
-  assert.equal(narrow.props.children[0].props.right,0)
+  assert.equal(narrow.props.children[0].props.children[0].props.columns,3)
+  assert.equal(narrow.props.children[0].props.children[0].props.rows,1)
+  assert.equal(narrow.props.children[0].props.right,1)
   await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:4}},next)
   assert.equal((await stream.next()).value,text)
   for(let at=91200;at<=93000;at+=120)await tick(at)
@@ -176,7 +177,7 @@ try {
     assert(Math.abs(x-lastX)<=2,'Actual painted pixels move at most two pixels per tick, never a cell')
     lastX=x
     assert.equal(values.get('motion'),beforePaint,'Moving never remounts or repositions the image')
-    assert.equal(image.width,320,'Canvas dimensions stay fixed across column boundaries')
+    assert.equal(image.width,canvas.props.children[0].props.source.width,'Canvas dimensions stay fixed across column boundaries')
   }
   const repainted=await hooks.get('ui.render')($,{requestId:'band',props:{bodyColumns:120,maxRows:4}},next)
   assert.equal(repainted.props.children[0].props.right,canvas.props.right,'No whole-cell placement jump during a redraw')
@@ -223,6 +224,7 @@ try {
   await hooks.get('command.run:guildbyte-kiss')($,{})
   await tick(kissStarted+600)
   assert.equal(values.get('motion').frame,13,'Rerunning /guildbyte-kiss must replay from the beginning')
+  await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:10}},next)
   const levelCommand=await hooks.get('command.run:guildbyte-levelup')($,{args:'5'})
   assert.match(levelCommand.text,/1 → 5/);assert.equal(values.get('motion').state,'levelup');assert.equal(values.get('motion').frame,0)
   assert.equal(values.get('status').levelUp.frames,undefined,'The level-up artwork stays in memory, outside persisted UI state')
@@ -245,9 +247,10 @@ try {
   const textHooks=new Map(),textTimers=[]
   const textRegister=(await import('../hooks/register.mjs?text-only')).register
   textRegister((event,matcher,hook)=>textHooks.set(event,typeof matcher==='function' ? matcher : hook))
-  const textApi={...$,env:{get:async()=>undefined},clock:{every:(ms)=>{textTimers.push(ms)}}}
+  const textApi={...$,env:{get:async()=>undefined},clock:{every:(ms)=>{const timer={ms,cancelled:false,cancel(){this.cancelled=true}};textTimers.push(timer);return timer}}}
   await textHooks.get('session.start')(textApi,{},next)
-  assert.deepEqual(textTimers,[10000],'Text-only terminals never poll animation frames')
+  await new Promise(resolve=>setImmediate(resolve))
+  assert.deepEqual(textTimers.filter(timer=>!timer.cancelled).map(timer=>timer.ms),[10000],'Text-only terminals stop the transient loader clock and never poll hero frames')
   assert.equal(requests.at(-1).includeArt,false,'Text-only terminals do not request sprite assets')
 } finally {Date.now=originalNow}
 console.log('Companion checks passed: larger sprite, wake/sit/sleep, patrol/home return, streams/cancellation, visitor arrival/kiss/departure, name/guild, acknowledgement and timer cleanup.')

@@ -24,7 +24,7 @@ export type GuildbyteStatus = {
   tokens: number
   prompts: number
   historyComplete: boolean
-  character?: {id:string;heroId?:string;level?:number} | null
+  character?: {id:string;heroId?:string;level?:number;xp?:number;nextLevelAt?:number;canLevelUp?:boolean} | null
   player?: {handle:string;points:number} | null
   progression?: GuildbyteProgression | null
   progressionCached?: boolean
@@ -337,6 +337,6 @@ export type DuelPanel = DuelPanelBase & (
 
 declare module 'claude-code' {
   interface PluginState {
-    guildbyte: { status: GuildbyteStatus; progression: GuildbyteProgression | null; chest: number; duelPanel: DuelPanel | null; motion: { frame: number; state: string; offset: number; facing: 'left'|'right';visit?:{id:string;frame:number;state:string;offset:number;facing:string} } }
+    guildbyte: { status: GuildbyteStatus; progression: GuildbyteProgression | null; chest: number; duelPanel: DuelPanel | null; motion: { frame: number; state: string; offset: number; facing: 'left'|'right';xp?:{amount:number;elapsed:number};visit?:{id:string;frame:number;state:string;offset:number;facing:string} } }
   }
 }

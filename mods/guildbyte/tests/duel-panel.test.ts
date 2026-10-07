@@ -21,14 +21,14 @@ const guildDuel = (roster: any[], extra: Record<string, unknown> = {}) => ({ id:
   you: { side: 'challenger', canAccept: false, canDecline: false, canCancel: true, canEditRoster: true, canReady: true, canUnready: false, canDeclineSelection: false, confirm: noConfirm }, ...extra })
 
 function harness(on: any, answer: (target: string) => unknown, placed = true) {
-  mock.clock(on)
+  const clock = mock.clock(on)
   mock.env(on, { TERM_PROGRAM: 'Orca', TERM: 'xterm-256color' })
   on('session.start', ($: any, e: any) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'a5928de2-75f4-4e84-bfff-18c392dbaf89' }))
   on('session.usage', () => ({ value: { context: { window: 200000 }, rateLimits: [] } }))
   on('command.register', () => ({ value: undefined }))
   on('settings.read', () => ({ value: {} }))
-  const world = { targets: [] as string[], status: { connected: true, pending: 0 } as Record<string, unknown>, toasts: [] as string[], opened: [] as string[], closed: [] as string[] }
+  const world = { clock, targets: [] as string[], status: { connected: true, pending: 0 } as Record<string, unknown>, toasts: [] as string[], opened: [] as string[], closed: [] as string[] }
   // The surface: places the pane, or (an older desktop) places none.
   on('ui.open', ($: any, e: any) => { world.opened.push(e.id); return { value: placed ? { isPlaced: true } : { isPlaced: false, reason: 'This surface places no panes.' } } })
   on('ui.close', ($: any, e: any) => { world.closed.push(e.id); return { value: undefined } })
@@ -212,6 +212,7 @@ describe('Guildbyte duel panels', () => {
     world.status = { ...world.status, notices: [{ id: 'duel-request:duel:Q7KM2P', kind: 'duel-request',
       request: { id: 'r1', code: 'Q7KM2P', kind: 'duel', from: 'alice', durationSeconds: 21600, wagerGold: 25, expiresAt: null, webUrl: `${origin}/duels/Q7KM2P` } }] }
     await $.session.start(start)
+    await world.clock.advance(0)
     expect(world.toasts).toEqual([`⚔ @alice challenges you · 6h · 25 gold wager. /duel accept Q7KM2P · /duel decline Q7KM2P · ${origin}/duels/Q7KM2P`])
   })
 })

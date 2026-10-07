@@ -36,6 +36,7 @@ describe('Guildbyte daily gauge', () => {
     world.status = { ...world.status, progression: progression(), progressionCached: true,
       notices: [{ id: '2026-10-05:gold', kind: 'reward', reward: 'gold', claimUrl }] }
     await $.session.start(start)
+    await clock.advance(0)
     const ui = await $.ui.mount({ plugin: 'guildbyte', surface: 'terminal', component: 'AbovePrompt', props } as any)
     expect(await ui.find({ type: 'Text', text: /Daily ▰▰▰▰▰▱▱▱▱▱ 8\.2M\/15M · streak 4 ×1\.020/ })).toBeDefined()
     // A claimable chest replaces the coin rather than sitting beside it.
@@ -79,6 +80,7 @@ describe('Guildbyte daily gauge', () => {
     world.status = { ...world.status, progression: progression({ league: { division: 'Gold II' } }), progressionCached: true,
       notices: [{ id: 'league:a', kind: 'promotion', from: 'Silver I', to: 'Gold II', claimUrl }] }
     await $.session.start(start)
+    await clock.advance(0)
     expect(toasts).toEqual([`★ Promoted to Gold II! ★ See your league in Guildbyte: ${claimUrl}`])
     // Only the session-start sync asks the worker for queued demotions; later syncs and status do not.
     expect(world.inputs.map(input => input.sessionStart ?? false)).toEqual([true])
@@ -89,6 +91,7 @@ describe('Guildbyte daily gauge', () => {
     // The next session start delivers the queued demotion quietly.
     world.status = { ...world.status, notices: [{ id: 'league:b', kind: 'demotion', from: 'Gold II', to: 'Silver I', claimUrl }] }
     await $.session.start(start)
+    await clock.advance(0)
     expect(world.inputs.at(-1)).toMatchObject({ action: 'sync', sessionStart: true })
     expect(toasts[1]).toBe('League update: now Silver I.')
 
@@ -109,8 +112,9 @@ describe('Guildbyte daily gauge', () => {
     const { clock, world } = harness(on, { TERM_PROGRAM: 'ghostty' }, { prefersReducedMotion: true })
     world.status = { ...world.status, character: null, progression: progression(), progressionCached: true }
     await $.session.start(start)
+    await clock.advance(0)
     const ui = await $.ui.mount({ plugin: 'guildbyte', surface: 'terminal', component: 'AbovePrompt', props } as any)
-    expect(await ui.find({ type: 'Image' })).toBeDefined()
+    expect(await ui.find({ type: 'Image' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /Daily ▰/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '▄▄' })).toBeDefined()
     await clock.advance(500)
@@ -119,6 +123,7 @@ describe('Guildbyte daily gauge', () => {
 
     world.status = { connected: false, pending: 0, progression: progression() }
     await $.session.start(start)
+    await clock.advance(0)
     const unpaired = await $.ui.mount({ plugin: 'guildbyte', surface: 'terminal', component: 'AbovePrompt', props } as any)
     expect(await unpaired.find({ type: 'Text', text: /Daily/ })).toBeUndefined()
     expect(await unpaired.find({ type: 'Button', text: /Connect account/ })).toBeDefined()
@@ -129,6 +134,7 @@ describe('Guildbyte daily gauge', () => {
     const { clock, world } = harness(on, { TERM_PROGRAM: 'Orca', TERM: 'xterm-256color' })
     world.status = { ...world.status, progression: progression({ rewards: { gold: { unlocked: true, claimed: false }, chest: { unlocked: false, claimed: false } } }), progressionCached: true }
     await $.session.start(start)
+    await clock.advance(0)
     const ui = await $.ui.mount({ plugin: 'guildbyte', surface: 'terminal', component: 'AbovePrompt', props } as any)
     expect(await ui.find({ type: 'Text', text: '◉ gold' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /▄▄|▀▀/ })).toBeUndefined()
