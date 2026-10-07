@@ -9,7 +9,7 @@ test('measure native canvas work',async()=>{
  const started=Date.now()
  for(let i=0;i<200;i++)source=pixelCanvas(pixels,0,'right',8,12,(i*.08)%12,160,true)
  const elapsed=Date.now()-started
- console.log(JSON.stringify({canvasCalls:200,totalMs:elapsed,msPerCall:elapsed/200,bytesPerFrame:source.rgba.length,bytesPerSecondAt20FPS:source.rgba.length*20}))
+ console.log(JSON.stringify({canvasCalls:200,totalMs:elapsed,msPerCall:elapsed/200,bytesPerFrame:source.rgba.length,bytesPerSecondAt12_5FPS:source.rgba.length*12.5,trafficReductionPercent:37.5}))
  expect(source.width).toBe(384);expect(source.height).toBe(160)
 })
 

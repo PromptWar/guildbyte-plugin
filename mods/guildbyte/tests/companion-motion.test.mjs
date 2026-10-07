@@ -70,12 +70,16 @@ try {
   const next=async e=>e
   await hooks.get('session.start')($,{},next)
   await new Promise(resolve=>setImmediate(resolve))
-  const tick=async at=>{now=at;timers.find(t=>t.ms===50).fn();await new Promise(resolve=>setImmediate(resolve))}
+  const tick=async at=>{now=at;timers.find(t=>t.ms===80).fn();await new Promise(resolve=>setImmediate(resolve))}
   await tick(90000)
   assert.equal(values.get('motion').state,'sleep')
   const beforeRequests=requests.length
   const edit={text:'private keyboard contents',inputText:'private keyboard contents'}
   assert.equal(await hooks.get('prompt.edit')($,edit,next),edit)
+  const held=values.get('motion')
+  await tick(90100)
+  assert.equal(values.get('motion'),held,'Typing does not redraw the prompt band')
+  await tick(90250)
   assert.equal(values.get('motion').state,'idle')
   assert.equal(requests.length,beforeRequests,'Keystrokes do not start uploads')
   await hooks.get('turn.start')($,{turnId:'t1'},next)
@@ -84,7 +88,7 @@ try {
   let downstreamClosed=false
   const stream=hooks.get('turn.step')($,{turnId:'t1',index:0},async function*(){try{yield thinking;yield text;yield engine;return result}finally{downstreamClosed=true}})
   assert.equal((await stream.next()).value,thinking)
-  for(let at=90120;at<=91080;at+=120)await tick(at)
+  for(let at=90370;at<=91330;at+=120)await tick(at)
   assert(values.get('motion').offset>0)
   assert.equal(values.get('motion').facing,'left')
   const tree=await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:3}},next)
@@ -96,9 +100,9 @@ try {
   assert.equal(larger.props.children[0].props.children[0].props.rows,6)
   assert.equal(larger.props.children[0].props.children[0].props.columns,27)
   const narrow=await hooks.get('ui.render')($,{props:{bodyColumns:4,maxRows:2}},next)
-  assert.equal(narrow.props.children[0].props.children[0].props.columns,3)
+  assert.equal(narrow.props.children[0].props.children[0].props.columns,2)
   assert.equal(narrow.props.children[0].props.children[0].props.rows,2)
-  assert.equal(narrow.props.children[0].props.right,1)
+  assert.equal(narrow.props.children[0].props.right,0)
   await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:4}},next)
   assert.equal((await stream.next()).value,text)
   for(let at=91200;at<=93000;at+=120)await tick(at)
@@ -135,6 +139,8 @@ try {
   const visiting=await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:10}},next)
   assert.equal(visiting.props.height,7)
   assert.equal(visiting.props.children.length,3,'Resident, visitor, and name/guild label render together')
+  assert.equal(visiting.props.children[1].props.left,0,'Visitor stays in the left section')
+  assert.equal(visiting.props.children[1].props.width,40,'Visitor patrol never enters the actions or player section')
   assert.equal(visiting.props.children[2].props.children[0].props.children,'Ayla · <Pixel Forge>')
   await tick(288620)
   assert.equal(values.get('motion').visit.state,'kiss')
@@ -187,7 +193,9 @@ try {
   await tick(now+50);await tick(now+50)
   assert.equal(queued.length,1,'A slow native blit cannot overlap a newer frame and paint them out of order')
   release();await new Promise(resolve=>setImmediate(resolve))
-  assert.equal(queued.length,2,'After a slow paint, coalesce missed ticks into the latest position')
+  assert.equal(queued.length,1,'After a slow paint, drop missed ticks without a catch-up redraw')
+  await tick(now+80)
+  assert.equal(queued.length,2,'The next scheduled tick paints the latest position')
   // A continuously busy terminal must not hold prompt hooks until every queued frame drains.
   const slow=[];let promptFinished=false
   $.ui.blit=async()=>new Promise(resolve=>{slow.push(()=>resolve({}))})
@@ -196,11 +204,12 @@ try {
   await tick(now+50)
   const finishedWithoutPaint=promptFinished
   slow[0]();await new Promise(resolve=>setImmediate(resolve))
-  assert.equal(slow.length,2,'A missed tick paints the newest position after the first paint')
+  assert.equal(slow.length,1,'Typing drops pending animation ticks without another prompt redraw')
   const finishedAfterOnePaint=promptFinished
-  slow[1]();await editDuringPaint
+  await editDuringPaint
   assert(finishedAfterOnePaint,'Prompt hooks wait for at most one paint, not a perpetually replenished animation queue')
   assert(finishedWithoutPaint,'Typing must return immediately even if terminal drawing is stalled')
+  $.ui.blit=async args=>{blits.push(args);return {}}
   const oldUsage=$.session.usage;let releaseUsage,submitted=false
   $.session.usage=()=>new Promise(resolve=>{releaseUsage=resolve})
   const submission=hooks.get('prompt.submit')($,{text:'private keyboard contents'},next).then(()=>{submitted=true})
@@ -210,8 +219,8 @@ try {
   await submission;await new Promise(resolve=>setImmediate(resolve))
   assert(submittedBeforeSync,'Prompt submission must not wait for background syncing or network requests')
   $.ui.blit=async()=>({deny:'Image unavailable'})
-  await tick(295401)
-  await tick(295461)
+  await tick(now+300)
+  await tick(now+80)
   assert.notEqual(values.get('motion'),beforePaint,'A denied blit falls back to ordinary rendering')
   await hooks.get('command.run:guildbyte-idle')($,{})
   for(let i=0;i<60;i++)await tick(now+250)

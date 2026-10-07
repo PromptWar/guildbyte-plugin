@@ -35,7 +35,7 @@ const $={plugin:{root:'/plugin'},session:{id:async()=> 'session',usage:async()=>
 register((event,matcher,hook)=>{if(typeof matcher==='function'){hook=matcher;matcher={}}hooks.set(event+(matcher.command?':'+matcher.command:''),hook)})
 const collect=(node,type)=>[...(node?.type===type?[node]:[]),...(Array.isArray(node?.props?.children)?node.props.children:[]).flatMap(child=>collect(child,type))]
 const render=()=>hooks.get('ui.render')($,{requestId:'band',props:{bodyColumns:120,maxRows:10}},next)
-const tick=async ms=>{now+=ms;timers.find(t=>t.ms===50&&!t.cancelled).fn();await flush()}
+const tick=async ms=>{now+=ms;timers.find(t=>t.ms===80&&!t.cancelled).fn();await flush()}
 const centroid=source=>{const data=Buffer.from(source.rgba,'base64');let mass=0,x=0,y=0;for(let i=0;i<data.length;i+=4){const a=data[i+3];mass+=a;x+=(i/4%source.width)*a;y+=Math.floor(i/4/source.width)*a}return {x:x/mass,y:y/mass}}
 try{
  await hooks.get('session.start')($,{},next);await flush()
