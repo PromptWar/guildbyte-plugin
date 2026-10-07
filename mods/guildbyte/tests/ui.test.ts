@@ -42,22 +42,24 @@ describe('Guildbyte companion', () => {
     const rgba=btoa(String.fromCharCode(...dot))
     pixels={width:128,height:128,frames:Array(28).fill(rgba),mirroredFrames:Object.fromEntries(Array.from({length:28},(_,i)=>[i,rgba]))}
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' } as any)
-    expect((await connected.find({type:'Image'}))?.props.source).toEqual({png:character.png})
-    expect((await connected.find({type:'Image'}))?.props.columns).toBe(4)
+    const retained=(await connected.find({type:'Image'}))?.props.source
+    expect(retained.width).toBe(192);expect(retained.height).toBe(256)
+    expect(atob(retained.rgba).includes(String.fromCharCode(255,0,0,255))).toBe(true)
+    expect((await connected.find({type:'Image'}))?.props.columns).toBe(3)
     omitArt=true
     await $.command.run({command:'guildbyte-sync',args:''} as any)
-    expect((await connected.find({type:'Image'}))?.props.source).toEqual({png:character.png})
+    expect((await connected.find({type:'Image'}))?.props.source).toEqual(retained)
     await $.command.run({command:'guildbyte-walk',args:''} as any)
     const canvas=(await connected.find({type:'Image'}))?.props
-    expect(canvas.columns).toBe(16)
-    expect(canvas.source.width).toBe(512)
-    expect(canvas.source.height).toBe(128)
-    expect(atob(canvas.source.rgba).length).toBe(512*128*4)
+    expect(canvas.columns).toBe(15)
+    expect(canvas.source.width).toBe(960)
+    expect(canvas.source.height).toBe(256)
+    expect(atob(canvas.source.rgba).length).toBe(960*256*4)
     await connected.unmount()
     const large=await $.ui.mount({plugin:'guildbyte',surface:'terminal',component:'AbovePrompt',props:{hasSurvey:false,bodyColumns:120,maxRows:10}} as any)
     await $.command.run({command:'guildbyte-idle',args:''} as any)
-    expect((await large.find({type:'Image'}))?.props.rows).toBe(5)
-    expect((await large.find({type:'Image'}))?.props.columns).toBe(10)
+    expect((await large.find({type:'Image'}))?.props.rows).toBe(6)
+    expect((await large.find({type:'Image'}))?.props.columns).toBe(15)
     await large.unmount()
     isConnected = false
     omitArt=false

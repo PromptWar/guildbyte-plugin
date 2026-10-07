@@ -92,12 +92,12 @@ try {
   assert.equal(tree.props.children[0].props.right,1,'The image placement stays fixed while its pixels move')
   assert(tree.props.children[0].props.children[0].props.source.rgba,'The terminal gets a native pixel canvas')
   const larger=await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:10}},next)
-  assert.equal(larger.props.height,5)
-  assert.equal(larger.props.children[0].props.children[0].props.rows,5)
-  assert.equal(larger.props.children[0].props.children[0].props.columns,22)
+  assert.equal(larger.props.height,6)
+  assert.equal(larger.props.children[0].props.children[0].props.rows,6)
+  assert.equal(larger.props.children[0].props.children[0].props.columns,27)
   const narrow=await hooks.get('ui.render')($,{props:{bodyColumns:4,maxRows:2}},next)
   assert.equal(narrow.props.children[0].props.children[0].props.columns,3)
-  assert.equal(narrow.props.children[0].props.children[0].props.rows,1)
+  assert.equal(narrow.props.children[0].props.children[0].props.rows,2)
   assert.equal(narrow.props.children[0].props.right,1)
   await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:4}},next)
   assert.equal((await stream.next()).value,text)
@@ -133,7 +133,7 @@ try {
   await hooks.get('command.run:guildbyte-sync')($)
   await tick(287120)
   const visiting=await hooks.get('ui.render')($,{props:{bodyColumns:120,maxRows:10}},next)
-  assert.equal(visiting.props.height,6)
+  assert.equal(visiting.props.height,7)
   assert.equal(visiting.props.children.length,3,'Resident, visitor, and name/guild label render together')
   assert.equal(visiting.props.children[2].props.children[0].props.children,'Ayla · <Pixel Forge>')
   await tick(288620)
@@ -168,13 +168,13 @@ try {
   const latest=await hooks.get('ui.render')($,{requestId:'band',props:{bodyColumns:120,maxRows:4}},next)
   assert.deepEqual(latest.props.children[0].props.children[0].props.source,blits.at(-1).source,'Other redraws retain the latest painted frame')
   const canvas=latest.props.children[0]
-  const columnPixels=128/8
+  const columnPixels=128/((canvas.props.children[0].props.columns-12)/1.5)
   const centroid=source=>{const data=Buffer.from(source.rgba,'base64');let total=0,x=0;for(let i=0;i<data.length;i+=4){const a=data[i+3];total+=a;x+=(i/4%source.width)*a}return x/total}
   let lastX=centroid(blits.at(-1).source)
   for(let i=0;i<40;i++) {
     await tick(now+50)
     const image=blits.at(-1).source,x=centroid(image)
-    assert(Math.abs(x-lastX)<=2,'Actual painted pixels move at most two pixels per tick, never a cell')
+    assert(Math.abs(x-lastX)<=Math.ceil(.081*columnPixels),'Painted pixels advance by the authored sub-column tick with nearest-pixel rounding')
     lastX=x
     assert.equal(values.get('motion'),beforePaint,'Moving never remounts or repositions the image')
     assert.equal(image.width,canvas.props.children[0].props.source.width,'Canvas dimensions stay fixed across column boundaries')

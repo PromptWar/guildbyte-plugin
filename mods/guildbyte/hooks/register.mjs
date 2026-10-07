@@ -73,12 +73,12 @@ async function paint($) {
     if(imageSite?.geometry===geometry) {
       const png=value.state==='levelup' ? levelUp?.frames[value.frame] : (value.facing==='left' ? companion?.mirroredFrames?.[value.frame] : null) ?? companion?.frames[value.frame]
       try {
-        const updates=png ? [$.ui.blit({requestId:imageSite.id,key:'companion',source:(value.state==='levelup' ? levelUpCanvas(levelUpPixels,value.frame,value.facing,imageSite.baseColumns,travelLimit,value.offset,imageSite.pixelHeight) : !moving ? null : pixelCanvas(pixels,value.frame,value.facing,imageSite.columns,imageSite.travel,value.offset)) ?? {png}})] : []
+        const updates=png ? [$.ui.blit({requestId:imageSite.id,key:'companion',source:(value.state==='levelup' ? levelUpCanvas(levelUpPixels,value.frame,value.facing,imageSite.baseColumns,travelLimit,value.offset,imageSite.pixelHeight) : pixelCanvas(pixels,value.frame,value.facing,imageSite.columns,imageSite.travel,value.offset,imageSite.pixelHeight,true)) ?? {png}})] : []
         if(value.xp && imageSite.xpHeight)updates.push($.ui.blit({requestId:imageSite.id,key:'xp-gain',source:xpCanvas(value.xp.amount,value.xp.elapsed,imageSite.baseColumns,travelLimit,value.offset,imageSite.xpHeight)}))
         if(value.visit && visitor) {
           const guest=visitor.character.animation,pose=value.visit
           const png=(pose.facing==='left' ? guest.mirroredFrames?.[pose.frame] : null) ?? guest.frames[pose.frame]
-          updates.push($.ui.blit({requestId:imageSite.id,key:'visitor',source:(guestMoving ? pixelCanvas(visitorPixels,pose.frame,pose.facing,imageSite.columns,imageSite.visitorTravel,pose.offset) : null) ?? {png}}))
+          updates.push($.ui.blit({requestId:imageSite.id,key:'visitor',source:pixelCanvas(visitorPixels,pose.frame,pose.facing,imageSite.columns,guestMoving?imageSite.visitorTravel:0,pose.offset,imageSite.pixelHeight,true) ?? {png}}))
         }
         if(updates.length && (await Promise.all(updates)).every(result=>!result.deny)) {lastPose=signature;return}
       } catch { /* Older surfaces repaint through the normal render path. */ }
@@ -328,11 +328,13 @@ export function register(on, configuration = {}) {
     const labelRows=visit && available>1 ? 1 : 0
     const scale=pose.state==='levelup' ? levelUp?.renderScale??1 : 1
     // Keep the hero scale stable when the action row appears or disappears.
-    const baseRows=Math.max(1,Math.min(5,(e.props.maxRows ?? 7)-actionRows-labelRows))
-    const rows=pose.state==='levelup' ? Math.max(1,Math.min(Math.ceil(baseColumns/2*scale),available-labelRows)) : baseRows
-    const columns=Math.min(10*scale,rows*2,visit && width>=3 ? Math.floor((width-1)/2) : width),home=Math.min(1,width-(pose.state==='levelup' ? baseColumns : columns))
+    const baseRows=Math.max(1,Math.min(5,(e.props.maxRows ?? 7)-actionRows-labelRows-(pixels?1:0)))
+    const rows=pose.state==='levelup' ? Math.max(1,Math.min(Math.ceil(baseColumns/2*scale),available-labelRows)) : baseRows+(pixels?1:0)
+    const maxColumns=Math.min(10*scale,(pose.state==='levelup'?rows:baseRows)*2,visit && width>=3 ? Math.floor((width-1)/2) : Math.max(1,Math.floor(width/1.5)))
+    const columns=Math.max(1,pose.state==='levelup'?Math.floor(maxColumns):Math.floor(maxColumns/2)*2)
     if(pose.state!=='levelup')baseColumns=columns
-    travelLimit=Math.min(12,Math.max(0,width-baseColumns-Math.min(1,width-baseColumns)))
+    const home=Math.min(1,Math.max(0,width-baseColumns*1.5))
+    travelLimit=Math.min(12,Math.max(0,width-baseColumns*1.5-home))
     visitorTarget=width>=columns*2+home+1 ? columns+1 : 0
     visitorLimit=Math.max(visitorTarget,Math.min(24,width-columns-home))
     const children = []
@@ -340,15 +342,15 @@ export function register(on, configuration = {}) {
     if (Image && png) {
       const moving=pose.state==='walk' && Boolean(pixels) && travelLimit>0
       const travel=moving ? travelLimit : 0
-      const source=pose.state==='levelup' ? levelUpCanvas(levelUpPixels,pose.frame,pose.facing,baseColumns,travelLimit,pose.offset,Math.round(rows*256/baseColumns)) : !moving ? null : pixelCanvas(pixels,pose.frame,pose.facing,columns,travel,pose.offset)
-      const drawColumns=source && pose.state==='levelup' ? baseColumns+travelLimit+Math.ceil(baseColumns/4) : columns+travel
+      const source=pose.state==='levelup' ? levelUpCanvas(levelUpPixels,pose.frame,pose.facing,baseColumns,travelLimit,pose.offset,Math.round(rows*256/baseColumns)) : pixelCanvas(pixels,pose.frame,pose.facing,columns,travel,pose.offset,Math.round(rows*256/columns),true)
+      const drawColumns=source ? Math.ceil(pose.state==='levelup'?baseColumns*1.5+travelLimit:columns*1.5+travel) : columns
       const image=Image({ key:'companion', source: source ?? { png }, columns:drawColumns, rows, alt: `Your Guildbyte character: ${pose.state ?? 'idle'}` })
-      if(!visit || visitorTarget>0)children.push(status.connected ? Box({position:'absolute',right:pose.state==='levelup' && !source ? home+pose.offset-(columns-baseColumns)/2 : home,bottom:0,width:drawColumns,height:rows,children:[image]}) : image)
+      if(!visit || visitorTarget>0)children.push(status.connected ? Box({position:'absolute',right:pose.state==='levelup' && !source ? Math.round(home+pose.offset-(columns-baseColumns)/2) : home,bottom:0,width:drawColumns,height:rows,children:[image]}) : image)
       if(visit) {
         const arrival=pose.visit,animation=visit.character.animation,guestMoving=arrival.state==='walk' && Boolean(visitorPixels) && visitorLimit>0
         const guestPng=(arrival.facing==='left' ? animation.mirroredFrames?.[arrival.frame] : null) ?? animation.frames[arrival.frame]
-        children.push(Box({position:'absolute',right:home+(guestMoving ? 0 : arrival.offset),bottom:0,width:columns+(guestMoving ? visitorLimit : 0),height:rows,
-          children:[Image({key:'visitor',source:(guestMoving ? pixelCanvas(visitorPixels,arrival.frame,arrival.facing,columns,visitorLimit,arrival.offset) : null) ?? {png:guestPng},columns:columns+(guestMoving ? visitorLimit : 0),rows,alt:`${visit.name}${visit.guild ? ' from '+visit.guild : ''}: ${arrival.state}`})]}))
+        children.push(Box({position:'absolute',right:home+(guestMoving ? 0 : arrival.offset),bottom:0,width:Math.ceil(columns*(visitorPixels?1.5:1)+(guestMoving ? visitorLimit : 0)),height:rows,
+          children:[Image({key:'visitor',source:pixelCanvas(visitorPixels,arrival.frame,arrival.facing,columns,guestMoving?visitorLimit:0,arrival.offset,Math.round(rows*256/columns),true) ?? {png:guestPng},columns:Math.ceil(columns*(visitorPixels?1.5:1)+(guestMoving ? visitorLimit : 0)),rows,alt:`${visit.name}${visit.guild ? ' from '+visit.guild : ''}: ${arrival.state}`})]}))
         if(Text && labelRows)children.push(Box({position:'absolute',top:0,right:0,width,height:1,children:[Text({children:`${visit.name} · ${visit.guild ? '<'+visit.guild+'>' : 'No guild'}`,wrap:'truncate-end'})]}))
       }
     }
@@ -356,7 +358,7 @@ export function register(on, configuration = {}) {
     const xpHeight=Math.max(1,Math.round(popupRows*256/baseColumns))
     imageSite=status.connected && typeof e.requestId==='string' ? {id:e.requestId,columns,baseColumns,xpHeight:pose.xp ? xpHeight : 0,pixelHeight:Math.round(rows*256/baseColumns),travel:pose.state==='walk' && pixels ? travelLimit : 0,visitorTravel:visitorPixels ? visitorLimit : 0,geometry:JSON.stringify([pose.state==='levelup',pose.state==='walk' && Boolean(pixels) && travelLimit>0,pose.visit?.id,pose.visit?.state==='walk' && Boolean(visitorPixels) && visitorLimit>0,pose.xp?.amount])} : undefined
     const canvasHeight=Math.min(available,rows+labelRows+popupRows)
-    if(pose.xp && Image)children.push(Box({position:'absolute',right:home,bottom:Math.min(rows,available-popupRows),width:baseColumns+travelLimit,height:popupRows,children:[Image({key:'xp-gain',source:xpCanvas(pose.xp.amount,pose.xp.elapsed,baseColumns,travelLimit,pose.offset,xpHeight),columns:baseColumns+travelLimit,rows:popupRows,alt:`XP: +${pose.xp.amount}`})]}))
+    if(pose.xp && Image)children.push(Box({position:'absolute',right:home,bottom:Math.min(rows,available-popupRows),width:baseColumns*1.5+travelLimit,height:popupRows,children:[Image({key:'xp-gain',source:xpCanvas(pose.xp.amount,pose.xp.elapsed,baseColumns,travelLimit,pose.offset,xpHeight),columns:baseColumns*1.5+travelLimit,rows:popupRows,alt:`XP: +${pose.xp.amount}`})]}))
     const canvas=Box({width,height:Math.min(available,canvasHeight),position:'relative',flexDirection:'row',justifyContent:'flex-end',alignItems:'flex-end',children})
     if(!actionBar)return canvas
     return Box({ width: e.props.bodyColumns, height:Math.min(e.props.maxRows ?? 10,canvasHeight+(actionBar ? actionRows : 0)), justifyContent:'flex-end',alignItems:'flex-end',flexDirection:'column',children:[actionBar,canvas] })

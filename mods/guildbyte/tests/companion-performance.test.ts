@@ -7,10 +7,10 @@ test('measure native canvas work',async()=>{
  const pixels={width:128,height:128,frames:[btoa(String.fromCharCode(...bytes))]}
  let source:any
  const started=Date.now()
- for(let i=0;i<200;i++)source=pixelCanvas(pixels,0,'right',8,12,(i*.08)%12)
+ for(let i=0;i<200;i++)source=pixelCanvas(pixels,0,'right',8,12,(i*.08)%12,160,true)
  const elapsed=Date.now()-started
  console.log(JSON.stringify({canvasCalls:200,totalMs:elapsed,msPerCall:elapsed/200,bytesPerFrame:source.rgba.length,bytesPerSecondAt20FPS:source.rgba.length*20}))
- expect(source.width).toBe(320)
+ expect(source.width).toBe(384);expect(source.height).toBe(160)
 })
 
 test('measure short-lived XP and aura overlays',async()=>{
@@ -23,6 +23,6 @@ test('measure short-lived XP and aura overlays',async()=>{
  }
  const elapsed=Date.now()-started
  console.log(JSON.stringify({overlayPairs:100,totalMs:elapsed,msPerPair:elapsed/100,xpBytes:xp.rgba.length,auraBytes:aura.rgba.length}))
- expect(xp.width).toBe(320);expect(xp.height).toBe(64)
- expect(aura.width).toBe(352);expect(aura.height).toBe(192)
+ expect(xp.width).toBe(384);expect(xp.height).toBe(64)
+ expect(aura.width).toBe(384);expect(aura.height).toBe(192)
 })

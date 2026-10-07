@@ -2,6 +2,16 @@ import assert from 'node:assert/strict'
 import {register} from '../hooks/register.mjs'
 import {levelUpCanvas,xpCanvas} from '../scripts/companion-pixels.mjs'
 import {companionActivity} from '../scripts/companion-animation.mjs'
+// Full effect gutters must survive both facing directions, patrol endpoints and small bands.
+const edgeAura=Buffer.alloc(192*192*4)
+for(const [x,y]of[[0,0],[191,0],[0,191],[191,191]])edgeAura.set([255,200,0,255],(y*192+x)*4)
+const edgePixels={width:192,height:192,frames:[edgeAura.toString('base64')]}
+for(const columns of[1,2,4,8,10])for(const travel of[0,3,12])for(const offset of[0,travel/2,travel])for(const facing of['left','right'])for(const height of[96,192,205]){
+ const canvas=levelUpCanvas(edgePixels,0,facing,columns,travel,offset,height),raw=Buffer.from(canvas.rgba,'base64')
+ assert.equal(raw.length,canvas.width*canvas.height*4)
+ let alpha=0;for(let q=3;q<raw.length;q+=4)alpha+=raw[q]
+ assert.equal(alpha,4*255,'Level-up canvas clips effect corners')
+}
 const next=async e=>e,flush=()=>new Promise(resolve=>setImmediate(resolve)),originalNow=Date.now
 let now=0;Date.now=()=>now
 const hooks=new Map(),values=new Map(),timers=[],requests=[],blits=[]
@@ -51,9 +61,10 @@ try{
  assert.equal(values.get('motion').state,'levelup');assert.equal(values.get('motion').offset,position,'Manual aura begins at the current patrol position')
  const evolved=await render();assert.equal(collect(evolved,'Button').length,0,'Consumed action hides its frame immediately')
  const auraImage=collect(evolved,'Image').find(node=>node.props.key==='companion'),auraPoint=centroid(auraImage.props.source)
- const normal=centroid((await import('../scripts/companion-pixels.mjs')).pixelCanvas(pixels,0,'left',10,12,position))
- assert.equal(auraPoint.x-auraImage.props.source.width,normal.x-282,'Hero x anchor matches across differently sized effect canvases')
- assert.equal(auraPoint.y-auraImage.props.source.height,normal.y-128,'Hero floor matches across differently sized effect canvases')
+ const holder=collect(evolved,'Box').find(node=>node.props.children?.includes(auraImage));assert.equal(holder.props.right,1);assert.equal(holder.props.bottom,0)
+ const normal=centroid((await import('../scripts/companion-pixels.mjs')).pixelCanvas(pixels,0,'left',10,12,position,154,true))
+ assert.equal(auraPoint.x-auraImage.props.source.width,normal.x-346,'Hero x anchor matches across differently sized effect canvases')
+ assert.equal(auraPoint.y-auraImage.props.source.height,normal.y-154,'Hero floor matches across differently sized effect canvases')
  for(let i=0;i<15;i++)await tick(100)
  assert.equal(values.get('motion').offset,position,'Aura holds the current position through thinking')
  await tick(400);assert(Math.abs(values.get('motion').offset-position)<=.4,'Walking resumes without catching up or returning home')
