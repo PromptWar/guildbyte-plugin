@@ -20,10 +20,13 @@ let lastPose
 let visitor,visitStarted=0,completedVisits=[]
 let visitorTarget=9,visitorLimit=24
 
-let painting,lastInputAt=-Infinity
+let painting,lastInputAt=-Infinity,lastPaintAt=-Infinity
 const FRAME_INTERVAL=80
-function animate($) {
+function animate($,immediate=false) {
   if(painting)return painting
+  // Stream hooks share the timer budget; explicit previews remain immediate.
+  if(!immediate && Date.now()-lastPaintAt<FRAME_INTERVAL)return
+  lastPaintAt=Date.now()
   return painting=(async()=>{
     try {await paint($)}
     finally {painting=undefined}
@@ -145,7 +148,7 @@ async function worker($, action = 'sync', usage,target) {
     if(!status.connected)visitor=undefined
     if(!status.visit && !visitor){guestCompanion=visitorPixels=visitorArtRevision=undefined}
     else if(status.visit && status.visit.id!==visitor?.id && !completedVisits.includes(status.visit.id) && Date.parse(status.visit.expiresAt)>Date.now()) {
-      visitor=incoming;visitStarted=Date.now()
+      visitor=incoming;visitStarted=Date.now();lastPose=undefined;imageSite=undefined
     }
     if(incoming?.id===visitor?.id)visitor=incoming
     if (!status.error) {failures.splice(0,sentFailures.length);completedVisits=completedVisits.filter(id=>!sentVisits.includes(id))}
@@ -159,7 +162,7 @@ async function worker($, action = 'sync', usage,target) {
   } finally {
     running = false
     await updateMotionTimer($)
-    if(!ending)void animate($)
+    if(!ending)void animate($,lastPose===undefined)
   }
 }
 
@@ -186,7 +189,7 @@ export function register(on, configuration = {}) {
   options = configuration
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    ending=false;lastInputAt=-Infinity;loading=true;loadingStarted=Date.now();companion=companionPng=pixels=visitor=guestCompanion=visitorPixels=undefined
+    ending=false;lastInputAt=lastPaintAt=-Infinity;loading=true;loadingStarted=Date.now();companion=companionPng=pixels=visitor=guestCompanion=visitorPixels=undefined
     activity=companionActivity();lastPose=undefined;currentPose=imageSite=undefined;levelUp=levelUpPixels=xpGain=observedCharacter=undefined;artRevision=visitorArtRevision=undefined
     await $.command.register({ name: 'guildbyte-connect', description: 'Link this Claude account to Guildbyte' })
     await $.command.register({name:'guildbyte-evolve',description:'Evolve the pinned hero when its XP bar is full',immediate:true})
@@ -223,7 +226,7 @@ export function register(on, configuration = {}) {
   })
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (!e.agentId) { activity.finish(e.turnId,Date.now());void animate($);void sync($) }
+    if (!e.agentId) { activity.finish(e.turnId,Date.now());void animate($,true);void sync($) }
     return result
   })
   on('turn.step', async function* ($, e, next) {
@@ -246,7 +249,7 @@ export function register(on, configuration = {}) {
         // Final steps also fire on desktop builds that omit turn.complete.
         if(ended && result?.stopReason==='tool_use')activity.mode('walk',e.turnId)
         else activity.finish(e.turnId,Date.now())
-        void animate($)
+        void animate($,!ended || result?.stopReason!=='tool_use')
       }
     }
     if (result?.stopReason === 'model_context_window_exceeded') {
@@ -283,7 +286,7 @@ export function register(on, configuration = {}) {
     if(!parseLevelUpArguments(target))return {text:'Use /guildbyte-levelup [1-5] [hero_id].'}
     if(visitor)return {text:'Wait for the current kiss visit to finish, then preview level-up.'}
     const status=await worker($,'levelup',undefined,target)
-    await animate($)
+    await animate($,true)
     return {text:status?.levelUp ? `Gold evolution preview: level ${status.levelUp.fromLevel} → ${status.levelUp.toLevel}. Earned XP is unchanged.` : status?.error??'Guildbyte is syncing. Try again in a moment.'}
   })
   on('command.run',{command:'kiss'},async ($,e)=>{
@@ -294,7 +297,7 @@ export function register(on, configuration = {}) {
   })
   for (const state of COMPANION_STATES) on('command.run', { command: `guildbyte-${state}` }, async $ => {
     activity.preview(state,Date.now())
-    await animate($)
+    await animate($,true)
     return { text: state==='idle' ? 'Guildbyte companion: automatic activity resumed.' : `Guildbyte companion: ${state}. Typing or /guildbyte-idle resumes automatic activity.` }
   })
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {

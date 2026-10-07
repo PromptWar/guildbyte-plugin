@@ -42,7 +42,7 @@ try{
  assert.equal(values.get('motion').xp,undefined,'Initial XP establishes a baseline without replaying past gains')
  assert.equal(collect(await render(),'Button').length,0,'No action frame when nothing can be done')
  await hooks.get('turn.start')($,{turnId:'thinking'},next)
- for(let i=0;i<20;i++)await tick(50)
+ for(let i=0;i<20;i++)await tick(80)
  await render()
  character={...character,xp:100,canLevelUp:true}
  await hooks.get('command.run:guildbyte-sync')($);await flush()
@@ -53,7 +53,7 @@ try{
  const popup=collect(gained,'Image').find(node=>node.props.key==='xp-gain');assert(popup)
  const initialY=centroid(popup.props.source).y
  await tick(100);assert(centroid(blits.findLast(b=>b.key==='xp-gain').source).y<initialY,'XP rises in pixels rather than jumping terminal rows')
- $.ui.blit=async()=>({deny:'capture current state'});await tick(50)
+ $.ui.blit=async()=>({deny:'capture current state'});await tick(80)
  $.ui.blit=async args=>{blits.push(args);return {}}
  const position=values.get('motion').offset
  button.props.onPress();await flush()

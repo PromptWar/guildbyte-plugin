@@ -178,9 +178,9 @@ try {
   const centroid=source=>{const data=Buffer.from(source.rgba,'base64');let total=0,x=0;for(let i=0;i<data.length;i+=4){const a=data[i+3];total+=a;x+=(i/4%source.width)*a}return x/total}
   let lastX=centroid(blits.at(-1).source)
   for(let i=0;i<40;i++) {
-    await tick(now+50)
+    await tick(now+80)
     const image=blits.at(-1).source,x=centroid(image)
-    assert(Math.abs(x-lastX)<=Math.ceil(.081*columnPixels),'Painted pixels advance by the authored sub-column tick with nearest-pixel rounding')
+    assert(Math.abs(x-lastX)<=Math.ceil(.129*columnPixels),'Painted pixels advance by the authored sub-column tick with nearest-pixel rounding')
     lastX=x
     assert.equal(values.get('motion'),beforePaint,'Moving never remounts or repositions the image')
     assert.equal(image.width,canvas.props.children[0].props.source.width,'Canvas dimensions stay fixed across column boundaries')
@@ -190,7 +190,7 @@ try {
   assert(columnPixels>2)
   const queued=[];let release
   $.ui.blit=async args=>{queued.push(args);if(queued.length===1)await new Promise(resolve=>{release=resolve});return {}}
-  await tick(now+50);await tick(now+50)
+  await tick(now+80);await tick(now+80)
   assert.equal(queued.length,1,'A slow native blit cannot overlap a newer frame and paint them out of order')
   release();await new Promise(resolve=>setImmediate(resolve))
   assert.equal(queued.length,1,'After a slow paint, drop missed ticks without a catch-up redraw')
@@ -199,9 +199,9 @@ try {
   // A continuously busy terminal must not hold prompt hooks until every queued frame drains.
   const slow=[];let promptFinished=false
   $.ui.blit=async()=>new Promise(resolve=>{slow.push(()=>resolve({}))})
-  await tick(now+50)
+  await tick(now+80)
   const editDuringPaint=hooks.get('prompt.edit')($,{},next).then(()=>{promptFinished=true})
-  await tick(now+50)
+  await tick(now+80)
   const finishedWithoutPaint=promptFinished
   slow[0]();await new Promise(resolve=>setImmediate(resolve))
   assert.equal(slow.length,1,'Typing drops pending animation ticks without another prompt redraw')
