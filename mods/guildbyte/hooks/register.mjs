@@ -1,5 +1,5 @@
 import {pixelCanvas,levelUpCanvas,xpCanvas} from '../scripts/companion-pixels.mjs'
-import {LOADER_FRAMES} from '../scripts/companion-loader.mjs'
+import {LOADER_FRAMES,LOADER_INTERVAL} from '../scripts/companion-loader.mjs'
 import { COMPANION_STATES, companionFrame, companionActivity,visitPose,levelUpFrame,parseLevelUpArguments } from '../scripts/companion-animation.mjs'
 
 const statusKey = { plugin: 'guildbyte', key: 'status' }
@@ -12,7 +12,7 @@ let sessionId
 let timer
 let motionTimer,motionInterval
 let loading=true,loadingStarted=Date.now(),ending=false
-let companion,companionPng,pixels,guestCompanion,visitorPixels,artRevision,visitorArtRevision,observedCharacter,levelUp,levelUpStarted=0,levelUpPixels,xpGain,xpGainStarted=0,baseColumns=8
+let companion,companionPng,pixels,guestCompanion,visitorPixels,artRevision,visitorArtRevision,observedCharacter,levelUp,levelUpStarted=0,levelUpPixels,xpGain,xpGainStarted=0,baseColumns=10
 let activity = companionActivity()
 let travelLimit = 12
 let imageSite,currentPose
@@ -32,9 +32,14 @@ function animate($) {
 async function paint($) {
   const now=Date.now()
   if(loading) {
-    const frame=Math.floor(Math.max(0,now-loadingStarted)/200)%LOADER_FRAMES.length
+    const frame=Math.floor(Math.max(0,now-loadingStarted)/LOADER_INTERVAL)%LOADER_FRAMES.length
     if(currentPose?.state==='loading' && currentPose.frame===frame)return
-    currentPose={state:'loading',frame,offset:0,facing:'right'};imageSite=lastPose=undefined
+    currentPose={state:'loading',frame,offset:0,facing:'right'};lastPose=undefined
+    if(imageSite?.loader) {
+      try {if(!(await $.ui.blit({requestId:imageSite.id,key:'loader',source:LOADER_FRAMES[frame].image})).deny)return}
+      catch { /* Older surfaces repaint through the normal render path. */ }
+    }
+    imageSite=undefined
     await $.state.set(motionKey,currentPose)
     return
   }
@@ -91,7 +96,7 @@ function stopTimers() {
 }
 
 async function updateMotionTimer($) {
-  const interval=loading ? 200 : companionPng && await showsPictures($) ? 50 : undefined
+  const interval=loading ? LOADER_INTERVAL : companionPng && await showsPictures($) ? 50 : undefined
   if(ending || interval===motionInterval)return
   if(typeof motionTimer==='function')motionTimer();else motionTimer?.cancel()
   motionTimer=undefined;motionInterval=interval
@@ -187,7 +192,7 @@ export function register(on, configuration = {}) {
     await animate($)
     await updateMotionTimer($)
     timer ??= $.clock.every(10000, () => { void sync($) })
-    void sync($)
+    void worker($,'status')
     return result
   })
   on('session.end', async ($, e, next) => {
@@ -296,7 +301,9 @@ export function register(on, configuration = {}) {
     if(loading) {
       const frame=LOADER_FRAMES[currentPose?.state==='loading' ? currentPose.frame : 0]
       const rows=Math.max(1,Math.min(3,e.props.maxRows ?? 3)),columns=Math.max(1,Math.min(6,e.props.bodyColumns))
-      const image=await showsPictures($) && Image ? Image({key:'loader',source:frame.image,columns,rows,alt:'Loading Guildbyte'}) : Text?.({children:rows<3?['▖','▘','▝','▗'][Math.floor(Math.max(0,Date.now()-loadingStarted)/200)%4]+' Loading Guildbyte':frame.text,dimColor:true,wrap:'truncate-end'})
+      const pictures=await showsPictures($) && Image
+      imageSite=pictures && typeof e.requestId==='string' ? {id:e.requestId,loader:true} : undefined
+      const image=pictures ? Image({key:'loader',source:frame.image,columns,rows,alt:'Loading Guildbyte'}) : Text?.({children:rows<3?['▖','▘','▝','▗'][Math.floor(Math.max(0,Date.now()-loadingStarted)/LOADER_INTERVAL)%4]+' Loading Guildbyte':frame.text,dimColor:true,wrap:'truncate-end'})
       return image ? Box({width:e.props.bodyColumns,height:rows,flexDirection:'row',justifyContent:'flex-end',paddingRight:1,children:[image]}) : next(e)
     }
     const width=Math.max(1,e.props.bodyColumns),ornate=(e.props.maxRows ?? 5)>=7 && width>=24,actionRows=ornate ? 3 : 1
@@ -321,9 +328,9 @@ export function register(on, configuration = {}) {
     const labelRows=visit && available>1 ? 1 : 0
     const scale=pose.state==='levelup' ? levelUp?.renderScale??1 : 1
     // Keep the hero scale stable when the action row appears or disappears.
-    const baseRows=Math.max(1,Math.min(4,(e.props.maxRows ?? 7)-actionRows-labelRows))
+    const baseRows=Math.max(1,Math.min(5,(e.props.maxRows ?? 7)-actionRows-labelRows))
     const rows=pose.state==='levelup' ? Math.max(1,Math.min(Math.ceil(baseColumns/2*scale),available-labelRows)) : baseRows
-    const columns=Math.min(8*scale,rows*2,visit && width>=3 ? Math.floor((width-1)/2) : width),home=Math.min(1,width-(pose.state==='levelup' ? baseColumns : columns))
+    const columns=Math.min(10*scale,rows*2,visit && width>=3 ? Math.floor((width-1)/2) : width),home=Math.min(1,width-(pose.state==='levelup' ? baseColumns : columns))
     if(pose.state!=='levelup')baseColumns=columns
     travelLimit=Math.min(12,Math.max(0,width-baseColumns-Math.min(1,width-baseColumns)))
     visitorTarget=width>=columns*2+home+1 ? columns+1 : 0

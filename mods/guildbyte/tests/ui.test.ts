@@ -54,6 +54,11 @@ describe('Guildbyte companion', () => {
     expect(canvas.source.height).toBe(128)
     expect(atob(canvas.source.rgba).length).toBe(512*128*4)
     await connected.unmount()
+    const large=await $.ui.mount({plugin:'guildbyte',surface:'terminal',component:'AbovePrompt',props:{hasSurvey:false,bodyColumns:120,maxRows:10}} as any)
+    await $.command.run({command:'guildbyte-idle',args:''} as any)
+    expect((await large.find({type:'Image'}))?.props.rows).toBe(5)
+    expect((await large.find({type:'Image'}))?.props.columns).toBe(10)
+    await large.unmount()
     isConnected = false
     omitArt=false
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' } as any)

@@ -231,33 +231,38 @@ async function request(origin, path, data, token) {
   return response.json()
 }
 
+async function heartbeat(db,origin,account,session,force=false) {
+  const active=session?.accountId===account.id && isUuid(session.sessionId)
+  const heartbeatKey = `heartbeat:${account.id}${active ? ':'+session.sessionId : ''}`
+  const ackKey=active ? `visit-acks:${account.id}:${session.sessionId}` : null
+  const acknowledgedVisits=ackKey ? JSON.parse(getMeta(db,ackKey) ?? '[]') : []
+  if (force || acknowledgedVisits.length || Date.now() - Number(getMeta(db, heartbeatKey) ?? 0) >= 10000) {
+    try {
+      const response=await request(origin, '/api/installations/heartbeat', active ? {sessionId:session.sessionId,acknowledgedVisits} : {}, account.token)
+      saveCompanion(db, account.id, response)
+      if(active) {
+        saveVisit(db,account.id,session.sessionId,response)
+        // Remove only acknowledgements sent in this request; another worker
+        // may have completed a different visit while the request was in flight.
+        const pending=JSON.parse(getMeta(db,ackKey) ?? '[]')
+        setMeta(db,ackKey,JSON.stringify(pending.filter(id=>!acknowledgedVisits.includes(id) || response.visit?.id===id)))
+      }
+      setMeta(db, heartbeatKey, String(Date.now()))
+    } catch (error) {
+      if (error.status !== 401) throw error
+      db.prepare('UPDATE accounts SET token=NULL,installation_id=NULL WHERE id=?').run(account.id)
+      setMeta(db, `reauth:${account.id}`, 'true')
+      return false
+    }
+  }
+  return true
+}
+
 export async function upload(db, origin, session) {
   // Historical records are unassigned: the first linked account uploads them as local history.
   const first = db.prepare('SELECT id FROM accounts WHERE token IS NOT NULL ORDER BY rowid LIMIT 1').get()?.id
   for (const account of db.prepare('SELECT * FROM accounts WHERE token IS NOT NULL').all()) {
-    const active=session?.accountId===account.id && isUuid(session.sessionId)
-    const heartbeatKey = `heartbeat:${account.id}${active ? ':'+session.sessionId : ''}`
-    const ackKey=active ? `visit-acks:${account.id}:${session.sessionId}` : null
-    const acknowledgedVisits=ackKey ? JSON.parse(getMeta(db,ackKey) ?? '[]') : []
-    if (acknowledgedVisits.length || Date.now() - Number(getMeta(db, heartbeatKey) ?? 0) >= 10000) {
-      try {
-        const response=await request(origin, '/api/installations/heartbeat', active ? {sessionId:session.sessionId,acknowledgedVisits} : {}, account.token)
-        saveCompanion(db, account.id, response)
-        if(active) {
-          saveVisit(db,account.id,session.sessionId,response)
-          // Remove only acknowledgements sent in this request; another worker
-          // may have completed a different visit while the request was in flight.
-          const pending=JSON.parse(getMeta(db,ackKey) ?? '[]')
-          setMeta(db,ackKey,JSON.stringify(pending.filter(id=>!acknowledgedVisits.includes(id) || response.visit?.id===id)))
-        }
-        setMeta(db, heartbeatKey, String(Date.now()))
-      } catch (error) {
-        if (error.status !== 401) throw error
-        db.prepare('UPDATE accounts SET token=NULL,installation_id=NULL WHERE id=?').run(account.id)
-        setMeta(db, `reauth:${account.id}`, 'true')
-        continue
-      }
-    }
+    if(!await heartbeat(db,origin,account,session))continue
     const query = `SELECT * FROM events WHERE synced=0 AND kind=? AND (account_id=? OR (account_id IS NULL AND ?=?)) ORDER BY (source='live') DESC, at LIMIT ?`
     const counters = db.prepare(query).all('counter', account.id, account.id, first ?? '', 100)
     db.prepare("UPDATE events SET synced=1 WHERE kind='reading' AND at < ?").run(new Date(Date.now() - 7 * 86400000).toISOString())
@@ -350,6 +355,9 @@ export async function run(input, dependencies = {}) {
     account = dependencies.account ?? accountIdentity()
     db.prepare('INSERT INTO accounts(id,plan) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET plan=excluded.plan').run(account.id, account.plan)
     let active = db.prepare('SELECT * FROM accounts WHERE id=?').get(account.id)
+    if(input.action==='status') {
+      if(active.token)await heartbeat(db,origin,active,{accountId:account.id,sessionId:input.sessionId},true)
+    }else{
     if (input.action === 'connect') {
       if (active.token) {
         try { saveCompanion(db, account.id, await request(origin, '/api/installations/heartbeat', {}, active.token)) }
@@ -437,6 +445,7 @@ export async function run(input, dependencies = {}) {
       const response=await request(origin,'/api/companion/level-up',{fromLevel,toLevel,...(input.action==='levelup'&&input.heroId?{heroId:input.heroId}:{})},token)
       levelUp=validateLevelUp(response.levelUp)
       if(!levelUp)throw Error('Guildbyte: invalid level-up animation response.')
+    }
     }
   } catch (failure) { error = failure.message?.includes('Guildbyte') || failure.message?.startsWith('Sign in') ? failure.message : 'Guildbyte is offline. Activity remains saved locally.' }
   try {
