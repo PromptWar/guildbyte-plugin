@@ -4,7 +4,7 @@ A standard Claude Code plugin installs the mod automatically. Its `AbovePrompt` 
 
 ## Connect and test locally
 
-Start the sibling Guildbyte app. Existing databases need migrations `020`, `030`, `031`, and `032`; a fresh Compose database applies them automatically. Then:
+Start the sibling Guildbyte app. Existing databases need migrations `020`, `030`, `031`, `032`, and `033`; a fresh Compose database applies them automatically. Then:
 
 ```bash
 claude plugin marketplace add PromptWar/guildbyte-plugin
@@ -37,7 +37,7 @@ The app is authoritative for progression. Every successful observation upload an
 
 The `AbovePrompt` band shows the cached gauge from session start: `Daily ▰▰▰▰▰▱▱▱▱▱ 8.2M/15M · streak 4 ×1.020`, then one reward icon and a `Claim in Guildbyte ↗` link (default `/leaderboard`) while a reward is unlocked and unclaimed: a yellow coin for gold, replaced by a small chest once the Daily Chest is claimable. If the chest is claimed first, the coin returns until gold is claimed too. Kitty terminals draw it left of the companion; other terminals add it above the status line. The gauge redraws only when what it shows changes. The chest hops between two half-block frames every 500ms, and stays still when Claude's `prefersReducedMotion` setting is on. At `expiresAt` (the next local midnight) the snapshot is no longer shown and every icon clears. A claim in the web app clears its icon on the next sync. The plugin never claims rewards.
 
-Each reward unlock (per local day) and each `leagueChange` id produces one toast, deduplicated across every session that shares the database, and nothing repeats while the state is unchanged. Unlock toasts link to the app. Reward unlocks and promotions appear as soon as a sync returns them; promotions are celebratory (`★ Promoted to Gold II! ★`, plus the companion's victory emote). A demotion is never shown mid-session: the worker queues it quietly in the local database and the first sync of the next Claude session start shows a short `League update: now Silver I.` once. A later league change replaces a queued demotion, and a promotion drops it. `/guildbyte-status` does not consume the queue. There is no final-warning notification before expiry.
+Each reward unlock (per local day) and each `leagueChange` id produces one toast, deduplicated across every session that shares the database, and nothing repeats while the state is unchanged. Unlock toasts link to the app. Reward unlocks and promotions appear as soon as a sync returns them; promotions are celebratory (`★ Promoted to Prompt Monkey II! ★`, plus the companion's victory emote). A demotion is never shown mid-session: the worker queues it quietly in the local database and the first sync of the next Claude session start shows a short `League update: now Free Plan Developer I.` once. A later league change replaces a queued demotion, and a promotion drops it. `/guildbyte-status` does not consume the queue. There is no final-warning notification before expiry.
 
 `/guildbyte-status` prints the cached snapshot without contacting the server: day and timezone, effective tokens and the next threshold, streak and multiplier, league, each reward's state, and the claim link and deadline.
 
