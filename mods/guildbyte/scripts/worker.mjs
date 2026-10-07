@@ -7,6 +7,8 @@ import { join, basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { validateAnimation } from './companion-animation.mjs'
 import { validateProgression, isNewer, fresh, claimable } from './progression.mjs'
+import { runDuelCommand } from './duel-client.mjs'
+import { webLink } from './duel-format.mjs'
 
 export function stableId(value) {
   const hash = createHash('sha256').update(`guildbyte-v1:${value}`).digest('hex')
@@ -225,18 +227,25 @@ export function saveFailures(db, account, sessionId, failures, usage) {
   }
 }
 
-async function request(origin, path, data, token) {
-  const response = await fetch(origin + path, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(5000),
-    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(data) })
+async function send(method, origin, path, data, token) {
+  const response = await fetch(origin + path, { method, redirect: 'error', signal: AbortSignal.timeout(5000),
+    headers: { ...(data === undefined ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    ...(data === undefined ? {} : { body: JSON.stringify(data) }) })
   if (!response.ok) {
-    let detail
-    try { detail=(await response.json()).error } catch { /* Older servers may return no JSON error. */ }
-    const error = new Error(typeof detail==='string' && detail.length<=200 ? `Guildbyte: ${detail}` : `Guildbyte returned ${response.status}. Pending activity is saved locally.`)
+    let body
+    try { body=await response.json() } catch { /* Older servers may return no JSON error. */ }
+    const detail=typeof body?.error==='string' && body.error.length<=200 ? body.error : undefined
+    const error = new Error(detail ? `Guildbyte: ${detail}` : `Guildbyte returned ${response.status}. Pending activity is saved locally.`)
     error.status = response.status
+    if (detail) error.detail = detail
+    // "Pair Guildbyte first" carries the setup link (duels D2).
+    if (typeof body?.setupUrl==='string' && body.setupUrl.length<=500) error.setupUrl = body.setupUrl
     throw error
   }
   return response.json()
 }
+const request = (origin, path, data, token) => send('POST', origin, path, data, token)
+export const get = (origin, path, token) => send('GET', origin, path, undefined, token)
 
 export async function upload(db, origin, session) {
   for (const account of db.prepare('SELECT * FROM accounts WHERE token IS NOT NULL').all()) {
@@ -249,6 +258,7 @@ export async function upload(db, origin, session) {
         const response=await request(origin, '/api/installations/heartbeat', active ? {sessionId:session.sessionId,acknowledgedVisits} : {}, account.token)
         saveCompanion(db, account.id, response)
         saveProgression(db, account.id, response)
+        saveDuelRequests(db, account.id, response, origin)
         if(active) {
           saveVisit(db,account.id,session.sessionId,response)
           // Remove only acknowledgements sent in this request; another worker
@@ -323,11 +333,27 @@ export function cachedProgression(db, accountId, origin, now = Date.now()) {
   return { ...rest, claimUrl: origin + claimPath }
 }
 
-// Each reward unlock and league change is announced once, across every
-// session sharing this database. Rewards and promotions are immediate. A
+const DUEL_REQUEST_KINDS = ['duel', 'lobby', 'guild_challenge', 'guild_roster']
+const printable = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\x00-\x1f\x7f-\x9f]/.test(value)
+
+// Caches the heartbeat's open duel requests (`duels.requests`, plan §12). An
+// older server sends no `duels` field and leaves the cache as it was; an
+// invalid entry is dropped, never shown.
+export function saveDuelRequests(db, accountId, response, origin) {
+  const requests = response?.duels?.requests
+  if (!Array.isArray(requests)) return
+  const valid = requests.slice(0, 20).filter(request => request && printable(request.id, 64) && (request.code === null || /^[0-9A-HJKMNP-TV-Z]{6}$/.test(request.code)) &&
+    DUEL_REQUEST_KINDS.includes(request.kind) && printable(request.from, 80) && Number.isSafeInteger(request.durationSeconds) && request.durationSeconds > 0 &&
+    Number.isSafeInteger(request.wagerGold) && request.wagerGold >= 0 && (request.expiresAt === null || Number.isFinite(Date.parse(request.expiresAt))))
+  setMeta(db, `duel-requests:${accountId}`, JSON.stringify(valid.map(({ id, code, kind, from, durationSeconds, wagerGold, expiresAt, webUrl }) =>
+    ({ id, code, kind, from, durationSeconds, wagerGold, expiresAt, webUrl: webLink(origin, webUrl, kind.startsWith('guild') ? '/duels?tab=guild' : '/duels') }))))
+}
+
+// Each reward unlock, league change and duel request is announced once, across
+// every session sharing this database. Rewards and promotions are immediate. A
 // demotion is queued quietly and delivered only at the next Claude session
 // start; a later league change replaces it.
-export function takeNotices(db, accountId, progression, sessionStart = false) {
+export function takeNotices(db, accountId, progression, sessionStart = false, now = Date.now()) {
   const key = `notified:${accountId}`, queueKey = `queued-notices:${accountId}`
   db.exec('BEGIN IMMEDIATE')
   try {
@@ -338,6 +364,12 @@ export function takeNotices(db, accountId, progression, sessionStart = false) {
     for (const reward of claimable(progression)) {
       const id = `${progression.localDay}:${reward}`
       if (!notified.includes(id)) notices.push({ id, kind: 'reward', reward, claimUrl: progression.claimUrl })
+    }
+    // A new duel request toasts once in one session, whichever syncs first.
+    for (const request of JSON.parse(getMeta(db, `duel-requests:${accountId}`) ?? '[]')) {
+      const id = `duel-request:${request.kind}:${request.code ?? request.id}`
+      if (request.expiresAt && Date.parse(request.expiresAt) <= now || notified.includes(id)) continue
+      notices.push({ id, kind: 'duel-request', request })
     }
     const change = progression?.leagueChange
     if (change && !notified.includes(`league:${change.id}`)) {
@@ -384,6 +416,7 @@ export async function run(input, dependencies = {}) {
   let account
   let linkUrl
   let kiss
+  let duel
   try {
     account = dependencies.account ?? accountIdentity()
     db.prepare('INSERT INTO accounts(id,plan) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET plan=excluded.plan').run(account.id, account.plan)
@@ -398,6 +431,7 @@ export async function run(input, dependencies = {}) {
           const response = await request(origin, '/api/installations/heartbeat', {}, active.token)
           saveCompanion(db, account.id, response)
           saveProgression(db, account.id, response)
+          saveDuelRequests(db, account.id, response, origin)
         }
         catch (failure) {
           if (failure.status !== 401) throw failure
@@ -434,6 +468,12 @@ export async function run(input, dependencies = {}) {
       if(typeof input.target!=='string' || !/^@?[a-z0-9_]{3,24}$/i.test(input.target.trim()))throw Error('Guildbyte: use /kiss <Guildbyte handle>.')
       kiss=await request(origin,'/api/companion/kiss',{target:input.target.trim(),requestId:randomUUID()},token)
     }
+    if(input.action==='duel') {
+      const token=db.prepare('SELECT token FROM accounts WHERE id=?').get(account.id)?.token
+      if(!token)throw Error('Guildbyte: run /guildbyte-connect before using /duel.')
+      const api={get:path=>get(origin,path,token),post:(path,data)=>request(origin,path,data,token),put:(path,data)=>send('PUT',origin,path,data,token)}
+      duel={...await runDuelCommand(typeof input.target==='string' ? input.target : '',api,randomUUID()),origin}
+    }
     if(isUuid(input.sessionId) && Array.isArray(input.completedVisits)) {
       const key=`visit-acks:${account.id}:${input.sessionId}`,seenKey=`visit-seen:${account.id}:${input.sessionId}`
       const visit=JSON.parse(getMeta(db,`visit:${account.id}:${input.sessionId}`) ?? 'null')
@@ -467,7 +507,7 @@ export async function run(input, dependencies = {}) {
   try {
     const result = summary(db, account, input.sessionId, origin)
     const notices = result.connected ? takeNotices(db, account.id, result.progression, input.sessionStart === true) : []
-    return { ...result, ...(notices.length ? { notices } : {}), ...(kiss ? {kiss} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) }
+    return { ...result, ...(notices.length ? { notices } : {}), ...(kiss ? {kiss} : {}), ...(duel ? {duel} : {}), ...(linkUrl ? { linkUrl } : {}), ...(error ? { error } : {}) }
   }
   finally { db.close() }
 }

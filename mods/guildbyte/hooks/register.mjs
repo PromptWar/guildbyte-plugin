@@ -1,10 +1,14 @@
 import { COMPANION_STATES, companionFrame, companionActivity,visitPose } from '../scripts/companion-animation.mjs'
 import { gaugeText, noticeText, rewardIcon, statusReport, visibleSignature } from '../scripts/progression.mjs'
+import { DUEL_COMMAND, duelFailure, duelUsage } from './duel-commands.mjs'
+import { DUEL_PANE, afterAction, applyStep, busyPanel, drawDuelPanel, openedText, paneTitle, panelFor } from './duel-panel.mjs'
+import { duelNoticeText, formatDuelReply } from '../scripts/duel-format.mjs'
 
 const statusKey = { plugin: 'guildbyte', key: 'status' }
 const motionKey = { plugin: 'guildbyte', key: 'motion' }
 const progressionKey = { plugin: 'guildbyte', key: 'progression' }
 const chestKey = { plugin: 'guildbyte', key: 'chest' }
+const duelPanelKey = { plugin: 'guildbyte', key: 'duelPanel' }
 
 let options = {}
 let failures = []
@@ -76,6 +80,7 @@ async function showProgression($,status) {
     await $.state.set(progressionKey,progression)
   }
   for(const notice of status.notices ?? []) {
+    if(notice.kind==='duel-request') {$.ui.toast(duelNoticeText(notice),{timeoutMs:12000});continue}
     $.ui.toast(noticeText(notice),{timeoutMs:notice.kind==='demotion' ? 4000 : 8000})
     if(notice.kind==='promotion') {activity.preview('victory',Date.now());await animate($)}
   }
@@ -121,6 +126,38 @@ async function worker($, action = 'sync', usage,target) {
   }
 }
 
+// /duel: results that need choices or a stake confirmation open the duel pane;
+// a surface that places none (isPlaced:false) gets the typed reply instead.
+async function runDuel($,args) {
+  const usage=duelUsage(args)
+  if(usage)return usage
+  const status=await worker($,'duel',undefined,args)
+  if(!status?.duel)return duelFailure(status)
+  const panel=panelFor(status.duel)
+  if(!panel)return formatDuelReply(status.duel)
+  await $.state.set(duelPanelKey,panel)
+  const opened=await $.ui.open({id:DUEL_PANE,title:paneTitle(panel),focus:true,closeOnEscape:true})
+  if(opened?.isPlaced)return openedText(panel)
+  await closeDuelPanel($)
+  return formatDuelReply(status.duel)
+}
+
+async function closeDuelPanel($) {
+  await $.ui.close({id:DUEL_PANE})
+  await $.state.set(duelPanelKey,null)
+}
+
+// A press applies a step to the panel as it is now: a choice redraws, a
+// command runs through the worker while the panel shows it is busy.
+async function pressDuelPanel($,step) {
+  const {value:panel}=await $.state.get(duelPanelKey)
+  if(!panel || panel.busy)return
+  const next=step(panel)
+  if(!next.args) {await $.state.set(duelPanelKey,applyStep(panel,next));return}
+  await $.state.set(duelPanelKey,busyPanel(panel))
+  await $.state.set(duelPanelKey,afterAction(panel,await worker($,'duel',undefined,next.args)))
+}
+
 let pictures
 // Claude Code draws an Image with the kitty graphics protocol only (kitty, Ghostty, not through tmux);
 // any other terminal (Orca, VS Code, Terminal.app) gets the alt text, so those get a status line instead.
@@ -162,6 +199,7 @@ export function register(on, configuration = {}) {
     await $.command.register({ name: 'guildbyte-sync', description: 'Retry pending activity uploads' })
     await $.command.register({ name: 'guildbyte-status', description: 'Show your daily gauge, streak and unclaimed rewards' })
     await $.command.register({name:'kiss',argumentHint:'<user_name>',description:'Send your character to kiss a player in their active Guildbyte session',immediate:true})
+    await $.command.register(DUEL_COMMAND)
     for (const state of COMPANION_STATES) await $.command.register({ name: `guildbyte-${state}`, description: `Show your companion's ${state} pose` })
     await sync($)
     await animate($)
@@ -253,6 +291,11 @@ export function register(on, configuration = {}) {
     if(!/^@?[a-z0-9_]{3,24}$/i.test(target ?? ''))return {text:'Use /kiss <Guildbyte handle>, for example /kiss @ayla.'}
     const status=await worker($,'kiss',undefined,target)
     return {text:status?.kiss ? `Kiss queued for @${status.kiss.target}. Your character, name and guild will appear in their terminal.` : status?.error ?? 'Guildbyte is syncing. Try /kiss again in a moment.'}
+  })
+  on('command.run',{command:'duel'},async ($,e)=>({text:await runDuel($,String(e.args ?? '').trim())}))
+  on('ui.render',{component:'Pane',requestId:'guildbyte-duel'},async ($,e)=>{
+    const {value:panel=null}=await $.state.get(duelPanelKey)
+    return drawDuelPanel($.ui.resolve(e),panel,{press:step=>pressDuelPanel($,step),close:()=>closeDuelPanel($)},e.surface)
   })
   for (const state of COMPANION_STATES) on('command.run', { command: `guildbyte-${state}` }, async $ => {
     activity.preview(state,Date.now())

@@ -1,10 +1,10 @@
-# Guildbyte 0.3.0
+# Guildbyte 0.4.0
 
 A standard Claude Code plugin installs the mod automatically. Its `AbovePrompt` hook displays your pinned animated Guildbyte character, with a Connect account button and fallback mage when the current account is unpaired or disconnected; no separate mod installation is needed. Requirements: Claude Code 2.1.287+ and Node 22.13+ (built-in SQLite). Implementation follows the [Claude mods guide](https://claude.dev/blog/getting-started-with-claude-code-mods/) and the installed runtime's generated types.
 
 ## Connect and test locally
 
-Start the sibling Guildbyte app. Existing databases need migrations `020`, `030`, `031`, `032`, and `033`; a fresh Compose database applies them automatically. Then:
+Start the sibling Guildbyte app. Existing databases need migrations `020`, `030`, `031`, `032`, `033`, and `034` (Duels v1); a fresh Compose database applies them automatically. Then:
 
 ```bash
 claude plugin marketplace add PromptWar/guildbyte-plugin
@@ -45,6 +45,30 @@ The app derives current and longest consecutive-day streaks itself. Opening Clau
 
 Limit counters require a real failure: context-window overflow, or a rate-limit failure plus an exhausted five-hour/seven-day reading. Merely approaching 100% does not count. The same account's rate-limit reset window is counted once.
 
+## Duels
+
+`/duel` runs player and guild duels from the CLI. The app is authoritative: it checks eligibility, privacy, Battle Energy, gold and cooldowns, and returns every display field and allowed action (`you.canAccept`, `you.confirm`, `potGold`, `energy.nextAt`…). The plugin parses the command, makes at most one read and one write through the worker with the installation token, and prints the reply with the web link the server returns. Response shapes mirror the app's `lib/duel-contract.ts` in `types/index.d.ts`.
+
+```text
+/duel                              dashboard: requests, active duels, energy
+/duel @alice 6h 25                 challenge (0 gold = exhibition)
+/duel @a @b @c 1d 10               free-for-all invitation (up to 7 handles)
+/duel lobby 4 1d 10                open lobby with a join link
+/duel join <link>                  preview, then add confirm to join
+/duel view|accept|decline|cancel|leave|forfeit <code>
+/duel energy [buy]                 Battle Energy (1,000 gold each)
+/duel link [on|off|1h…7d|regenerate]  your public exhibition link
+/duel guild                        your guild's duels and record
+/duel guild @rivals 5 25           declare: team size 2-10, stake per member, 7 days
+/duel guild view|accept|decline|cancel <code>
+/duel guild roster <code> [add|remove @handle]
+/duel guild ready|unready|decline-selection <code>
+```
+
+Durations are `1h`, `6h`, `1d`, `3d` and `7d`. A wager is a whole number of gold or `all`. Codes are six characters (`Q7KM2P`) and are case-insensitive. A stake above 100 gold needs `confirm` and a whole-balance stake needs `allin`. Accept, join and guild Ready read the server's own `confirm` requirement before staking. `/duel forfeit` needs `confirm`, and `/duel energy buy` needs `confirm` too. Where the surface places a pane, `/duel @handle`, guild declarations, roster edits and every confirmation open an interactive panel (duration and wager buttons, `[Cancel] [Send challenge]`, `[Keep fighting] [Forfeit]`). The panel runs the same typed command. Surfaces without panes get the typed reply, which names the command to rerun. A 409 "Pair Guildbyte first" prints the server's setup link, and a 401 asks for `/guildbyte-connect`.
+
+Heartbeats from a Duels v1 server carry `duels { badge, energy, requests }`. The worker validates each request (kind, six-character code, printable sender, positive duration, non-negative wager, expiry) and drops invalid ones. It caches them per account. Each new request toasts once across every session that shares the local database, under the id `duel-request:<kind>:<code>`. The toast shows the challenger, duration, stake and expiry, plus the accept and decline commands (`ready` and `decline-selection` for a guild roster pick). Expired requests are never shown. A server without Duels v1 sends no `duels` field, and the cache is left as it was. Plugins older than 0.4.0 ignore the field. Their heartbeat status is identical with or without it.
+
 ## Kiss visits
 
 Use `/kiss <user_name>` with a Guildbyte handle, optionally prefixed by `@`. The app chooses one most recently active linked session of that player. Your pinned character walks into its band, kisses, then leaves after eight seconds; your name and guild appear above the sprites. Both characters face one another and play one synchronized kiss, then hold the final neutral frame until departure. No prompt or message is inserted into the recipient's conversation.
@@ -62,8 +86,11 @@ node --no-warnings mods/guildbyte/tests/worker.test.mjs
 node mods/guildbyte/tests/progression.test.mjs
 node mods/guildbyte/tests/companion-animation.test.mjs
 node mods/guildbyte/tests/companion-motion.test.mjs
+node --no-warnings mods/guildbyte/tests/duel-format.test.mjs
+node --no-warnings mods/guildbyte/tests/duel-worker.test.mjs
+node --no-warnings mods/guildbyte/tests/duel-notices.test.mjs
 claude plugin test mods/guildbyte
 claude plugin validate mods/guildbyte
 ```
 
-In the app, run `npm run test:activity`, `npm run test:security`, `npm run test:duel`, `npm run test:guild-duel`, and `npm run typecheck`. The activity check uses a local database and removes its fixture user afterward.
+In the app, run `npm run test:activity`, `npm run test:security`, `npm run test:duel`, `npm run test:guild-duel`, `npm run test:duel-v1`, `npm run test:guild-duel-v1`, `npm run test:duel-settlement`, and `npm run typecheck`. The Duels v1 scripts print PENDING until `034` is applied. The activity check uses a local database and removes its fixture user afterward.

@@ -1,6 +1,6 @@
 {
   "name": "guildbyte",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A pixel-art companion, Claude account pairing, and content-free activity sync for Guildbyte.",
   "author": { "name": "Guildbyte" },
   "types": "./types/index.d.ts",
