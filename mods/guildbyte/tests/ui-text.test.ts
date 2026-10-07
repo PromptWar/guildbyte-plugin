@@ -9,7 +9,7 @@ describe('Guildbyte companion without kitty graphics', () => {
     on('session.usage', () => ({ value: { context: { window: 200000 }, rateLimits: [] } }))
     on('command.register', () => ({ value: undefined }))
     let status: Record<string, unknown> = { connected: false, pending: 0 }
-    on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(status), stderr: '' } }))
+    on('process.spawn', async function* () {yield {stream:'stdout',text:JSON.stringify(status)};return {value:{code:0}}})
     const props = { hasSurvey: false, bodyColumns: 120, maxRows: 5 }
 
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' } as any)

@@ -24,11 +24,12 @@ export type GuildbyteStatus = {
   tokens: number
   prompts: number
   historyComplete: boolean
-  character?: { id: string; png: string; animation?: { version: 1; frames: string[]; mirroredFrames?: Record<string,string>; clips: Record<string, {frames:number[]; durations:number[]}> } } | null
+  character?: {id:string;heroId?:string;level?:number} | null
   player?: {handle:string;points:number} | null
   progression?: GuildbyteProgression | null
   progressionCached?: boolean
   notices?: GuildbyteNotice[]
+  levelUp?: {id:string;heroId:string;version:1;fromLevel:number;toLevel:number;renderScale?:1|1.5;durationMs:number}
   linkUrl?: string
   error?: string
   kiss?: {id:string;target:string;expiresAt:string}

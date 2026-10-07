@@ -9,8 +9,11 @@ describe('Guildbyte companion', () => {
     on('session.usage', () => ({ value: { context: { window: 200000 }, rateLimits: [] } }))
     on('command.register', () => ({ value: undefined }))
     let isConnected = false
+    let pixels: any = null
+    let omitArt=false
     let character = { id: 'a5928de2-75f4-4e84-bfff-18c392dbaf89', png: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==' }
-    on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify({ connected: isConnected, character, tokens: 123, prompts: 2, pending: 3, historyComplete: true }), stderr: '' } }))
+    on('state.set',($,e,next)=>{if((e as any).key==='status'){expect((e as any).value.error).toBeUndefined();expect((e as any).value.pixels).toBeUndefined();expect((e as any).value.visitorPixels).toBeUndefined();if((e as any).value.connected){expect((e as any).value.character?.animation).toBeUndefined();expect((e as any).value.character?.png).toBeUndefined()}};return next(e)})
+    on('process.spawn', async function* () {yield {stream:'stdout',text:JSON.stringify({connected:isConnected,character:omitArt ? {id:character.id} : character,...(!omitArt ? {pixels} : {}),artRevision:"fixture-art",tokens:123,prompts:2,pending:3,historyComplete:true})};return {value:{code:0}}})
     on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
       const { Text } = $.ui.resolve(e)
       return Text({ children: 'Survey fallback' })
@@ -34,8 +37,26 @@ describe('Guildbyte companion', () => {
     character = { ...character, png: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWNgYPj/HwADAgH/xCAAOgAAAABJRU5ErkJggg==' }
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' } as any)
     expect((await connected.find({ type: 'Image' }))?.props.source).toEqual({ png: character.png })
+    expect(typeof atob).toBe('function')
+    expect(typeof btoa).toBe('function')
+    const dot=new Uint8Array(128*128*4);dot.set([255,0,0,255],(64*128+64)*4)
+    const rgba=btoa(String.fromCharCode(...dot))
+    pixels={width:128,height:128,frames:Array(28).fill(rgba),mirroredFrames:Object.fromEntries(Array.from({length:28},(_,i)=>[i,rgba]))}
+    await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' } as any)
+    expect((await connected.find({type:'Image'}))?.props.source).toEqual({png:character.png})
+    expect((await connected.find({type:'Image'}))?.props.columns).toBe(6)
+    omitArt=true
+    await $.command.run({command:'guildbyte-sync',args:''} as any)
+    expect((await connected.find({type:'Image'}))?.props.source).toEqual({png:character.png})
+    await $.command.run({command:'guildbyte-walk',args:''} as any)
+    const canvas=(await connected.find({type:'Image'}))?.props
+    expect(canvas.columns).toBe(18)
+    expect(canvas.source.width).toBe(384)
+    expect(canvas.source.height).toBe(128)
+    expect(atob(canvas.source.rgba).length).toBe(384*128*4)
     await connected.unmount()
     isConnected = false
+    omitArt=false
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' } as any)
     const disconnected = await $.ui.mount({ plugin: 'guildbyte', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, bodyColumns: 120, maxRows: 3 } } as any)
     expect(await disconnected.find({ type: 'Text' })).toBeUndefined()

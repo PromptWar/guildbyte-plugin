@@ -33,15 +33,16 @@ function harness(on: any, answer: (target: string) => unknown, placed = true) {
   on('ui.open', ($: any, e: any) => { world.opened.push(e.id); return { value: placed ? { isPlaced: true } : { isPlaced: false, reason: 'This surface places no panes.' } } })
   on('ui.close', ($: any, e: any) => { world.closed.push(e.id); return { value: undefined } })
   on('ui.toast', ($: any, e: any) => { world.toasts.push(e.text); return { value: undefined } })
-  on('process.run', ($: any, e: any) => {
-    const input = JSON.parse(e.init?.stdin ?? '{}')
+  on('process.spawn', async function* ($: any, e: any) {
+    const input = JSON.parse(e.input ?? e.init?.input ?? '{}')
     let status = world.status
     if (input.action === 'duel') {
       world.targets.push(input.target ?? '')
       const duel = answer(input.target ?? '')
       status = { ...world.status, ...(duel ? { duel: { origin, ...(duel as object) } } : {}) }
     }
-    return { value: { exitCode: 0, stdout: JSON.stringify(status), stderr: '' } }
+    yield { stream: 'stdout', text: JSON.stringify(status) }
+    return { value: { code: 0 } }
   })
   return world
 }

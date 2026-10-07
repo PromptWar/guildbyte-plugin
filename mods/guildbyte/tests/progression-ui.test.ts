@@ -21,10 +21,11 @@ function harness(on: any, env: Record<string, string>, settings: Record<string, 
   const toasts: string[] = []
   on('ui.toast', ($: any, e: any) => { toasts.push(e.text); return { value: undefined } })
   const world = { status: { connected: true, pending: 0, player: { handle: 'paul_1a2b3c4d', points: 12345 } } as Record<string, unknown>, actions: [] as string[], inputs: [] as any[] }
-  on('process.run', ($: any, e: any) => {
-    const input = JSON.parse(e.init?.stdin ?? '{}')
+  on('process.spawn', async function* ($: any, e: any) {
+    const input = JSON.parse(e.input ?? e.init?.input ?? '{}')
     world.actions.push(input.action);world.inputs.push(input)
-    return { value: { exitCode: 0, stdout: JSON.stringify(world.status), stderr: '' } }
+    yield { stream: 'stdout', text: JSON.stringify(world.status) }
+    return { value: { code: 0 } }
   })
   return { clock, toasts, world }
 }
@@ -45,9 +46,9 @@ describe('Guildbyte daily gauge', () => {
     expect((await ui.find({ type: 'Box' }))?.props).toMatchObject({ height: 2 })
     expect(toasts).toEqual([`Daily gold unlocked. Claim it in Guildbyte before local midnight: ${claimUrl}`])
 
-    // The chest hops while claimable.
+    // Text-only terminals avoid animation timers, so the chest stays still.
     await clock.advance(500)
-    expect(await ui.find({ type: 'Text', text: '▀▀' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '▄▄' })).toBeDefined()
     await clock.advance(500)
     expect(await ui.find({ type: 'Text', text: '▄▄' })).toBeDefined()
 
