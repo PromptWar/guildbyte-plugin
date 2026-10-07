@@ -1,0 +1,58 @@
+mods/guildbyte/types/index.d.ts
+  s_49f1243e1c7988::t_8f6d883ec2ee29 27,32
+mods/guildbyte/README.md
+  s_49f1243e1c7988::t_496ff45d411581 3,16,28-36,90,100,105-106,108-111
+  s_49f1243e1c7988::t_f078c4ec514cb7 46
+mods/guildbyte/hooks/register.mjs
+  s_49f1243e1c7988::t_64287d4f46ca93 122
+  s_49f1243e1c7988::t_6286ab860b89e3 240-243
+  s_49f1243e1c7988::t_234988bb84c4d7 1-2,21,32-41,46-47,56-59,63-65,67,69,73,109,121,124-127,129-142,144,146,148,231,247,254,259,261,266,271,275,284,294,299,306,324-331,363,365-367,376,378-382,384,386-387,391
+  s_49f1243e1c7988::t_dd6148e1709486 227
+mods/guildbyte/.claude-plugin/plugin.json
+  s_49f1243e1c7988::t_8f6d883ec2ee29 5-7,10-21
+mods/guildbyte/tests/progression-ui.test.ts
+  s_49f1243e1c7988::t_3077e32b961f4f 24,27-28
+  s_49f1243e1c7988::t_d64cc4c997157b 25
+  s_49f1243e1c7988::t_f078c4ec514cb7 49,51
+mods/guildbyte/scripts/worker.mjs
+  s_49f1243e1c7988::t_8f6d883ec2ee29 8-9,308-320,324,326,434,521-534,539-541,565,571
+mods/guildbyte/tests/duel-panel.test.ts
+  s_49f1243e1c7988::t_d64cc4c997157b 37
+  s_49f1243e1c7988::t_3077e32b961f4f 36,44-45
+mods/guildbyte/scripts/companion-animation.mjs
+  s_49f1243e1c7988::t_af5f39f88ac7b8 3-4,10-11,25,43,57,77-106
+mods/guildbyte/scripts/companion-pixels.mjs
+  s_49f1243e1c7988::t_728c792067a740 1-12
+mods/guildbyte/scripts/decode-companion.mjs
+  s_49f1243e1c7988::t_e3555696f1e2e4 1-47
+mods/guildbyte/tests/companion-animation.test.mjs
+  s_49f1243e1c7988::t_3f75c46a5ca7c2 2,38-66
+mods/guildbyte/tests/companion-motion.test.mjs
+  s_49f1243e1c7988::t_f372a25710f2ed 5-12,55-56,64,68,72,91-92,96,168-210,226-240,244-251
+mods/guildbyte/tests/companion-performance.test.ts
+  s_49f1243e1c7988::t_8b59583e48e640 1-14
+mods/guildbyte/tests/decode-companion.test.mjs
+  s_49f1243e1c7988::t_0f6fb552ad68f5 1-16
+mods/guildbyte/tests/ui-text.test.ts
+  s_49f1243e1c7988::t_2be073c1d699a5 12
+mods/guildbyte/tests/ui.test.ts
+  s_49f1243e1c7988::t_084d64eb2c47b9 12-13,15-16,40-56,59
+mods/guildbyte/tests/worker.test.mjs
+  s_49f1243e1c7988::t_66c55965abcb37 34,56-59,195-196,199-215,235,241-257
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66683c5db8dfcecc2841ce480e469c64982e00dd",
+  "prompts": {},
+  "sessions": {
+    "s_49f1243e1c7988": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a110b4-158d-7940-82b1-ed78d992957b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    }
+  }
+}
