@@ -1,0 +1,87 @@
+mods/guildbyte/scripts/progression.mjs
+  s_4f97b94786a1d8::t_26749f4e950b81 81
+  s_4f1abe9bd69534::t_72c0fb47312df9 103-108,110
+  s_4f97b94786a1d8::t_e86d998199fb3d 71-75
+  s_4f1abe9bd69534::t_8ec2202a2541f3 1-70,76-80,82-102,109,111-131
+mods/guildbyte/.claude-plugin/plugin.json
+  s_6e81d8d8eebd39::t_76d65326a1ffa3 8
+  s_4f1abe9bd69534::t_7f2a69d87ab8e8 3
+mods/guildbyte/types/index.d.ts
+  s_4f1abe9bd69534::t_483c2a4a8c9dbe 1-17,28-30,39
+mods/guildbyte/tests/worker.test.mjs
+  s_4f97b94786a1d8::t_217bf2851323ef 283-291
+  s_4f1abe9bd69534::t_754476be3bbbc8 7,16-17,19-26,39,54,64,73-79,90-91,94-95,98,100,111,145-147,149-152,165
+  s_4f1abe9bd69534::t_0367faee5a0804 2,13,48,223-245,261-277,292-320
+  s_4f97b94786a1d8::t_9b1ce62179a637 278-282
+  s_4f97b94786a1d8::t_ef36feb59aa532 246-260
+mods/guildbyte/tests/progression-ui.test.ts
+  s_4f97b94786a1d8::t_8b210f310a8d93 23,25-26,40-41
+  s_4f97b94786a1d8::t_bb6c381f883394 82-84,86-91,97,125-146
+  s_4f1abe9bd69534::t_cae7c550cd669f 1-22,24,27-39,42-81,85,92-96,98-124,147-148
+mods/guildbyte/hooks/register.mjs
+  s_4f1abe9bd69534::t_61c4c877eddef6 159
+  s_4f1abe9bd69534::t_27bd356afd6213 6-7,23,63-65,67-83,114,134,136,140-142,160,163,247-250,264,266-268,272-273,286-288
+  s_4f97b94786a1d8::t_54868fec4fea99 132-133,135,137-139
+  s_4f97b94786a1d8::t_26749f4e950b81 2,66
+  s_4f1abe9bd69534::t_af9f9a9e1840d9 96-98
+  s_4f1abe9bd69534::t_e3800059a23f57 15,85,88,170
+  s_4f97b94786a1d8::t_eef812efd4f0af 24-25,99,101,106,158
+mods/guildbyte/tests/progression.test.mjs
+  s_4f97b94786a1d8::t_8b210f310a8d93 2,64-70,98
+  s_4f1abe9bd69534::t_b913ab05914047 1,3-63,71-97
+mods/guildbyte/README.md
+  s_4f97b94786a1d8::t_c55b8e5f052dd6 38,40
+  s_6e81d8d8eebd39::t_76d65326a1ffa3 7
+  s_4f1abe9bd69534::t_5eb7cced544a28 1,11,14,20,28,30,32,34-37,39,41-44,62
+mods/guildbyte/scripts/worker.mjs
+  s_4f1abe9bd69534::t_a307e2cf2f1b6c 155
+  s_4f1abe9bd69534::t_0a3702df8a8abf 60-61,392-394
+  s_4f1abe9bd69534::t_53e20e3939819f 184-185
+  s_4f1abe9bd69534::t_b9f24a44554334 267-269,271
+  s_4f97b94786a1d8::t_69309918351aa2 327-331,335-336,342-351
+  s_4f1abe9bd69534::t_e0843adbe03fe6 279
+  s_4f1abe9bd69534::t_88854b1baeedf7 334,337-341,352-353
+  s_4f1abe9bd69534::t_0363cce68637ef 105,110-112
+  s_4f1abe9bd69534::t_d93695742bb854 213,215
+  s_4f1abe9bd69534::t_09fdaa3fad5f8c 332-333,354
+  s_4f97b94786a1d8::t_64eb622581ca3d 469
+  s_4f1abe9bd69534::t_5bab13e3189c6c 9
+  s_4f1abe9bd69534::t_ebdacfe2e2296c 391,397-401,428,446-448,450-462,467-468,470-471,475,481-482
+  s_4f1abe9bd69534::t_7cbd104767f109 251
+  s_4f1abe9bd69534::t_df7bb3a1383fdc 310-326,355-356
+  s_4f1abe9bd69534::t_90bddd62210c58 55-59,66-73
+README.md
+  s_4f1abe9bd69534::t_5eb7cced544a28 8,13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb2fefd4ef2b5beb7815e8875c042644942f5144",
+  "prompts": {},
+  "sessions": {
+    "s_4f1abe9bd69534": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9d734b6-416e-4d88-96de-212498524b06",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    },
+    "s_4f97b94786a1d8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f5ac5e14-eda2-4ed6-82a6-63c4e05a2d9e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    },
+    "s_6e81d8d8eebd39": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10bf0-1985-7250-84ac-0f5c2568ce04",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    }
+  }
+}
