@@ -1,0 +1,55 @@
+mods/guildbyte/.claude-plugin/plugin.json
+  s_8f3edf86d6b761::t_6c704185804ccd 3
+mods/guildbyte/README.md
+  s_8f3edf86d6b761::t_89df6f043067cf 7,56,62-63,75-79
+mods/guildbyte/hooks/register.mjs
+  s_8f3edf86d6b761::t_b05e87937752ff 1-2,13-15,34-41,46-48,59,61,67,71-72,90-98,102,110,116,127-134,142,147,151-152,179-180,182,188,190,194,267-272,296-312,315,320-321,323-328,333,336-339,348-355
+mods/guildbyte/scripts/companion-animation.mjs
+  s_8f3edf86d6b761::t_c1cff8d0181ec3 41-42
+mods/guildbyte/scripts/companion-loader.mjs
+  s_8f3edf86d6b761::t_a8debdea711425 1-11
+mods/guildbyte/scripts/companion-pixels.mjs
+  s_8f3edf86d6b761::t_40860d8cfd1313 13-69
+mods/guildbyte/scripts/worker.mjs
+  s_113c423c1030ff::t_64fe514a123871 291-293,295,303,419-429,433-434,445
+mods/guildbyte/tests/companion-feedback.test.mjs
+  s_113c423c1030ff::t_7d34f83b208c0b 1-68
+mods/guildbyte/tests/companion-loading.test.mjs
+  s_8f3edf86d6b761::t_43aa7f884bd5bd 1-31
+mods/guildbyte/tests/companion-motion.test.mjs
+  s_113c423c1030ff::t_d623ca69748840 72,99-101,180,227,250,252-253
+mods/guildbyte/tests/companion-performance.test.ts
+  s_8f3edf86d6b761::t_db6ab453d772b9 2,15-28
+mods/guildbyte/tests/ui-feedback.test.ts
+  s_8f3edf86d6b761::t_b7629bd37e1960 1-65
+mods/guildbyte/tests/ui.test.ts
+  s_113c423c1030ff::t_48ef69cb08494e 24,31-33,46,52-53,55
+mods/guildbyte/tests/worker.test.mjs
+  s_113c423c1030ff::t_bc82c3a6b4d2c8 45-50,231-237,242
+mods/guildbyte/types/index.d.ts
+  s_113c423c1030ff::t_fb7f8f3b598c6b 9,20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "84f81a94c5f93f865bb446ffde81cb1cda116ebe",
+  "prompts": {},
+  "sessions": {
+    "s_113c423c1030ff": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    },
+    "s_8f3edf86d6b761": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "unknown"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    }
+  }
+}
