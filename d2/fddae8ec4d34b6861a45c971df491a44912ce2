@@ -1,0 +1,19 @@
+mods/guildbyte/tests/ui-feedback.test.ts
+  s_113c423c1030ff::t_f3ac2449b6bb59 66-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d2fddae8ec4d34b6861a45c971df491a44912ce2",
+  "prompts": {},
+  "sessions": {
+    "s_113c423c1030ff": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    }
+  }
+}
