@@ -1,0 +1,54 @@
+mods/guildbyte/scripts/worker.mjs
+  s_49f1243e1c7988::t_527741c1717aa1 309-311,313,321,524-534,538-539,551
+mods/guildbyte/types/index.d.ts
+  s_49f1243e1c7988::t_527741c1717aa1 27,340
+mods/guildbyte/hooks/register.mjs
+  s_49f1243e1c7988::t_8980f55a83ad77 1-2,20-22,44-51,56-58,69,71,77,81-82,123-125,130-132,140,150,157,168-175,183,189,193-194,269,277,279,283,360-365,397-410,416,427-428,430-435,443,446-449,458-465
+  s_49f1243e1c7988::t_8ada6c9a4ffd10 419-422
+  s_49f1243e1c7988::t_91f11175da7da9 264-265
+  s_49f1243e1c7988::t_52dcc9b238176d 411-415
+  s_49f1243e1c7988::t_2cdf119ca22916 99,119,122,126-129,133-136
+mods/guildbyte/README.md
+  s_49f1243e1c7988::t_527741c1717aa1 7,90,100-101,113-117
+mods/guildbyte/tests/progression-ui.test.ts
+  s_49f1243e1c7988::t_52dcc9b238176d 117
+  s_49f1243e1c7988::t_d2423055043e81 39,83,94,115,126,137
+mods/guildbyte/tests/duel-panel.test.ts
+  s_49f1243e1c7988::t_d2423055043e81 24,31,215
+mods/guildbyte/scripts/companion-animation.mjs
+  s_49f1243e1c7988::t_4e2fced67b64bd 41-42
+mods/guildbyte/scripts/companion-loader.mjs
+  s_49f1243e1c7988::t_1d16d6db965a2b 1-11
+mods/guildbyte/scripts/companion-pixels.mjs
+  s_49f1243e1c7988::t_bbe893de1a3ba0 13-69
+mods/guildbyte/tests/companion-feedback.test.mjs
+  s_49f1243e1c7988::t_c4423ec1df297c 1-68
+mods/guildbyte/tests/companion-loading.test.mjs
+  s_49f1243e1c7988::t_fbdeeaf99744a8 1-31
+mods/guildbyte/tests/companion-motion.test.mjs
+  s_49f1243e1c7988::t_975f4795d9feeb 72,99-101,180,227,250,252-253
+mods/guildbyte/tests/companion-performance.test.ts
+  s_49f1243e1c7988::t_fa80ef49ecc551 2,15-28
+mods/guildbyte/tests/ui-feedback.test.ts
+  s_49f1243e1c7988::t_c150ee9bcdcb76 1-65
+mods/guildbyte/tests/ui.test.ts
+  s_49f1243e1c7988::t_3ff2caa3f27bf7 24,31-33,46,52-53,55
+mods/guildbyte/tests/worker.test.mjs
+  s_49f1243e1c7988::t_a6af359435650d 56-61,257-263,268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe6180ed812558078bcd9dc9cf46b725dd69cccd",
+  "prompts": {},
+  "sessions": {
+    "s_49f1243e1c7988": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a110b4-158d-7940-82b1-ed78d992957b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    }
+  }
+}
