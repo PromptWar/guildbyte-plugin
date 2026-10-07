@@ -63,3 +63,27 @@ test('XP feedback and gold action frame use the native UI and manual evolve requ
  expect((await compact.find({key:'companion'}))?.props.source.width).toBe(576)
  await compact.unmount()
 })
+
+test('Retry sync button clears an upload error after the app recovers',async($,on)=>{
+ mock.clock(on);mock.env(on,{TERM_PROGRAM:'ghostty'})
+ on('session.start',(_,e)=>({cwd:e.cwd}))
+ on('session.id',()=>({value:'a5928de2-75f4-4e84-bfff-18c392dbaf89'}))
+ on('session.usage',()=>({value:{context:{window:200000},rateLimits:[]}}))
+ on('command.register',()=>({value:undefined}))
+ let calls=0
+ on('process.spawn',async function*(_,e){
+  const action=JSON.parse((e as any).input).action
+  expect(action).toBe(calls===0?'status':'sync')
+  calls++
+  yield{stream:'stdout',text:JSON.stringify({connected:true,pending:calls===1?12:0,...(calls===1?{error:'Guildbyte: Internal server error'}:{})})}
+  return{value:{code:0}}
+ })
+ await $.session.start({surface:'terminal',isInteractive:true,cwd:'/work'}as any)
+ const ui=await $.ui.mount({plugin:'guildbyte',surface:'terminal',component:'AbovePrompt',props:{bodyColumns:120,maxRows:10}}as any)
+ expect(await ui.find({type:'Button',text:/Retry sync/})).toBeDefined()
+ await ui.press({key:'Retry sync'})
+ expect(calls).toBe(2)
+ expect(await ui.find({type:'Button',text:/Retry sync/})).toBeUndefined()
+ expect(await ui.find({key:'actions'})).toBeUndefined()
+ await ui.unmount()
+})
