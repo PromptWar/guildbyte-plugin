@@ -1,0 +1,19 @@
+mods/guildbyte/README.md
+  s_f1e3f8c755955d::t_ec3f13c9ef7728 7,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b8aeb2449d8f7f9b994d09bf0e8785b1a5fb0ea0",
+  "prompts": {},
+  "sessions": {
+    "s_f1e3f8c755955d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a112a7-828d-7453-b91a-5144597c7442",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Paul FOURNET <paul.pfournet@gmail.com>"
+    }
+  }
+}
