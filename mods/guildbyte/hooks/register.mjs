@@ -20,13 +20,13 @@ let lastPose
 let visitor,visitStarted=0,completedVisits=[]
 let visitorTarget=9,visitorLimit=24
 
-let painting,lastInputAt=-Infinity,lastPaintAt=-Infinity
+let painting,lastInputAt=-Infinity
 const FRAME_INTERVAL=80
 function animate($,immediate=false) {
   if(painting)return painting
-  // Stream hooks share the timer budget; explicit previews remain immediate.
-  if(!immediate && Date.now()-lastPaintAt<FRAME_INTERVAL)return
-  lastPaintAt=Date.now()
+  // The clock owns continuous playback. Stream events only change activity;
+  // a second elapsed-time guard would discard slightly early clock ticks.
+  if(!immediate && motionTimer)return
   return painting=(async()=>{
     try {await paint($)}
     finally {painting=undefined}
@@ -108,7 +108,7 @@ async function updateMotionTimer($) {
   if(ending || interval===motionInterval)return
   if(typeof motionTimer==='function')motionTimer();else motionTimer?.cancel()
   motionTimer=undefined;motionInterval=interval
-  if(interval)motionTimer=$.clock.every(interval,()=>{void animate($)})
+  if(interval)motionTimer=$.clock.every(interval,()=>{void animate($,true)})
 }
 
 async function worker($, action = 'sync', usage,target) {
@@ -189,7 +189,7 @@ export function register(on, configuration = {}) {
   options = configuration
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    ending=false;lastInputAt=lastPaintAt=-Infinity;loading=true;loadingStarted=Date.now();companion=companionPng=pixels=visitor=guestCompanion=visitorPixels=undefined
+    ending=false;lastInputAt=-Infinity;loading=true;loadingStarted=Date.now();companion=companionPng=pixels=visitor=guestCompanion=visitorPixels=undefined
     activity=companionActivity();lastPose=undefined;currentPose=imageSite=undefined;levelUp=levelUpPixels=xpGain=observedCharacter=undefined;artRevision=visitorArtRevision=undefined
     await $.command.register({ name: 'guildbyte-connect', description: 'Link this Claude account to Guildbyte' })
     await $.command.register({name:'guildbyte-evolve',description:'Evolve the pinned hero when its XP bar is full',immediate:true})

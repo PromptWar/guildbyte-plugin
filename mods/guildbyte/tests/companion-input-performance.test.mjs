@@ -53,6 +53,21 @@ try{
  const streamUpdates=blits.length-beforeStream+fullBandImages
  assert(streamUpdates<=15,`Stream hooks bypass the frame budget: ${streamUpdates} updates in one second`)
  renderOnWrite=false;await hooks.get('turn.complete')($,{turnId:'stream'},next);await flush();now+=300;await tick()
+ // Early timer delivery and stream mode hints must not steal walk frames.
+ await hooks.get('turn.start')($,{turnId:'jitter'},next);await flush();await tick();await render()
+ const beforeJitter=blits.length,paintTimes=[]
+ for(let i=0;i<30;i++){
+  const before=blits.length;now+=1
+  const tool=hooks.get('turn.step')($,{turnId:'jitter',index:i},async function*(){yield{kind:'thinking'};return{stopReason:'tool_use'}})
+  for await(const item of tool)await flush()
+  now+=78
+  timers.find(t=>t.ms===80&&!t.cancelled).fn();await flush()
+  if(blits.length>before)paintTimes.push(now)
+ }
+ const jitterGaps=paintTimes.slice(1).map((at,i)=>at-paintTimes[i])
+ assert.equal(blits.length-beforeJitter,30,'Every delivered timer tick paints walking')
+ assert(Math.max(...jitterGaps)<=100,'Early ticks must not freeze walking for a second interval')
+ await hooks.get('turn.complete')($,{turnId:'jitter'},next);await flush()
  // Host redraws during streaming/interaction must reuse the held image.
  await hooks.get('command.run:guildbyte-walk')($);await render()
  await assertRenderReuse('walk')
@@ -92,6 +107,6 @@ try{
  await hooks.get('command.run:guildbyte-sync')($);await flush()
  assert(images(await render()).some(n=>n.props.key==='visitor'))
  await assertRenderReuse('visiting hero');await assertTypingQuiet('visiting hero')
- console.log(JSON.stringify({streamUpdatesPerSecond:streamUpdates,encodingsOnUnchangedRenders:0,overlays:4,states:COMPANION_STATES.length,animationBlits:baselineCalls,imageUpdatesWhileTyping:0,promptRedrawsWhileTyping:0,idleImageUpdates:quietCalls,maxPaintsInFlight:1,updatesPerSecond:12.5}))
+ console.log(JSON.stringify({streamUpdatesPerSecond:streamUpdates,walkTicks:30,walkPaints:paintTimes.length,maxWalkFrameGapMs:Math.max(...jitterGaps),encodingsOnUnchangedRenders:0,overlays:4,states:COMPANION_STATES.length,animationBlits:baselineCalls,imageUpdatesWhileTyping:0,promptRedrawsWhileTyping:0,idleImageUpdates:quietCalls,maxPaintsInFlight:1,updatesPerSecond:12.5}))
  await hooks.get('session.end')($,{},next)
 }finally{Date.now=originalNow;globalThis.btoa=originalBtoa}
