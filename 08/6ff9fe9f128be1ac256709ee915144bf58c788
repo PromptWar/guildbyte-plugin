@@ -1,0 +1,25 @@
+README.md
+  s_8f3edf86d6b761::t_9a2b7bb4ed0e80 15,17
+mods/guildbyte/.claude-plugin/plugin.json
+  s_8f3edf86d6b761::t_5a2c7348e894b2 3
+mods/guildbyte/hooks/register.mjs
+  s_8f3edf86d6b761::t_71f06079fab2e1 23,27-29,111,192
+mods/guildbyte/tests/companion-input-performance.test.mjs
+  s_8f3edf86d6b761::t_fe711ef767d50c 56-70,110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "086ff9fe9f128be1ac256709ee915144bf58c788",
+  "prompts": {},
+  "sessions": {
+    "s_8f3edf86d6b761": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "unknown"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    }
+  }
+}
