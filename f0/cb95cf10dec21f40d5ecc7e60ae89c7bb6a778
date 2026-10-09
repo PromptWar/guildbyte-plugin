@@ -1,0 +1,33 @@
+mods/guildbyte/.claude-plugin/plugin.json
+  s_8f3edf86d6b761::t_a5e592579b30eb 3
+mods/guildbyte/README.md
+  s_8f3edf86d6b761::t_a6969be0992239 1,26,63
+mods/guildbyte/hooks/register.mjs
+  s_113c423c1030ff::t_d9597b14438cd6 317-318
+mods/guildbyte/tests/companion-reconnect.test.mjs
+  s_8f3edf86d6b761::t_f9c364bf8e60c3 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f0cb95cf10dec21f40d5ecc7e60ae89c7bb6a778",
+  "prompts": {},
+  "sessions": {
+    "s_113c423c1030ff": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    },
+    "s_8f3edf86d6b761": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "unknown"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    }
+  }
+}
