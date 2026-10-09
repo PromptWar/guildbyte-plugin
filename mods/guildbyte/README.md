@@ -1,4 +1,4 @@
-# Guildbyte 0.4.1
+# Guildbyte 0.4.6
 
 A standard Claude Code plugin installs the mod automatically. Its `AbovePrompt` hook displays your pinned animated Guildbyte character, with a pixel loader while data loads and a Connect account button only after the current account is confirmed disconnected; no separate mod installation is needed. Requirements: Claude Code 2.1.287+ and Node 22.13+ (built-in SQLite). Implementation follows the [Claude mods guide](https://claude.dev/blog/getting-started-with-claude-code-mods/) and the installed runtime's generated types.
 
@@ -23,7 +23,7 @@ Activity uploads contain only numeric observations, IDs, timestamps, account UUI
 
 Local state is stored outside the plugin cache at `~/.claude/guildbyte/<app-origin-hash>/activity.sqlite` (under `CLAUDE_CONFIG_DIR` when set). It holds pairing secrets and installation tokens, is private to the OS user, and survives plugin uninstall/reinstall. Stable observation IDs are deduplicated per Guildbyte user across installations; monotonic snapshots prevent replay from lowering totals. Relinking the same provider UUID reuses one app account. Losing the local database can require pairing again, but imported events retain their stable IDs.
 
-Heartbeat requests run every ten seconds while Claude is active. The app considers an installation online for two minutes after its last heartbeat or batch. No heartbeat means offline, not proof of uninstall. The app polls status every fifteen seconds; setup notices disappear after pairing and remain hidden for previously paired offline installations. Installation tokens expire after ninety days. A 401 clears that account's local token, retains queued data, and asks for `/guildbyte-connect`. Reconnecting replaces expired presence for that account without increasing account count. Other linked accounts may still need reauthentication.
+Heartbeat requests run every ten seconds while Claude is active. The app considers an installation online for two minutes after its last heartbeat or batch. No heartbeat means offline, not proof of uninstall. The app polls status every fifteen seconds; setup notices disappear after pairing and remain hidden for previously paired offline installations. Installation tokens expire after ninety days. A 401 clears that account's local token, retains queued data, and offers **Reconnect account** (or `/guildbyte-connect`). Retry sync remains available for upload failures with a valid pairing. Reconnecting replaces expired presence for that account without increasing account count. Other linked accounts may still need reauthentication.
 
 ## Performance
 
@@ -60,6 +60,7 @@ node --no-warnings mods/guildbyte/tests/worker.test.mjs
 node mods/guildbyte/tests/companion-animation.test.mjs
 node mods/guildbyte/tests/companion-motion.test.mjs
 node mods/guildbyte/tests/companion-loading.test.mjs
+node mods/guildbyte/tests/companion-reconnect.test.mjs
 node --no-warnings mods/guildbyte/tests/companion-startup.test.mjs
 node mods/guildbyte/tests/companion-feedback.test.mjs
 node mods/guildbyte/tests/decode-companion.test.mjs

@@ -314,8 +314,8 @@ export function register(on, configuration = {}) {
     }
     const width=Math.max(1,e.props.bodyColumns),ornate=(e.props.maxRows ?? 5)>=7 && width>=24,actionRows=ornate ? 3 : 1
     const actions=[]
-    if(status.error && Button)actions.push(Button({label:'Retry sync',onPress:()=>{void sync($)}}))
-    if(!status.connected && !status.error && Button)actions.push(Button({label:'Connect account',onPress:()=>{void worker($,'connect')}}))
+    if(status.error && status.connected!==false && Button)actions.push(Button({label:'Retry sync',onPress:()=>{void sync($)}}))
+    if(!status.connected && (!status.error || status.connected===false) && Button)actions.push(Button({label:status.error ? 'Reconnect account' : 'Connect account',onPress:()=>{void worker($,'connect')}}))
     if(status.connected && status.character?.canLevelUp && status.character.level<5 && !levelUp && !visitor && Button)actions.push(Button({label:'Level up',variant:'primary',onPress:()=>{void worker($,'evolve',undefined,{characterId:status.character.id,level:status.character.level})}}))
     const progress=actions.length && ornate && status.connected && status.character && Text ? Text({children:status.character.level===5 ? 'Lv 5 · MAX' : `Lv ${status.character.level ?? 1} · ${status.character.xp ?? 0}/${status.character.nextLevelAt ?? 100} XP`,color:'#d7ad64',wrap:'truncate-end'}) : null
     const actionBar=actions.length ? Box({key:'actions',height:actionRows,flexDirection:'row',justifyContent:'center',alignItems:'center',gap:1,...(ornate?{borderStyle:'double',borderColor:'#d7ad64',paddingLeft:1,paddingRight:1}:{}),children:actions}) : null
