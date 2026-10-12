@@ -45,8 +45,9 @@ const server = createServer(async (request, response) => {
   if(request.url==='/api/companion/evolve'){
     assert.equal(payload.characterId,character.id)
     if(payload.level!==character.level){response.statusCode=409;response.end(JSON.stringify({error:'Guildbyte: hero changed'}));return}
-    character={...character,level:character.level+1,nextLevelAt:400,canLevelUp:false}
-    response.end(JSON.stringify({character,levelUp:{id:randomUUID(),heroId:character.heroId,version:1,fromLevel:payload.level,toLevel:character.level,frames:Array(18).fill(pixelPng),durations:Array(18).fill(100),durationMs:1800}}));return
+    const fromEvolution=character.evolution??character.level
+    character={...character,level:character.level+1,nextLevelAt:400,canLevelUp:false,...(character.evolution!==undefined?{evolution:character.evolution+1}:{})}
+    response.end(JSON.stringify({character,levelUp:{id:randomUUID(),heroId:character.heroId,version:1,fromLevel:fromEvolution,toLevel:character.evolution??character.level,frames:Array(18).fill(pixelPng),durations:Array(18).fill(100),durationMs:1800}}));return
   }
   if(request.url==='/api/companion/level-up'){
     assert.equal(request.headers.authorization,'Bearer '+'x'.repeat(48));evolutions.push(payload)
@@ -209,7 +210,18 @@ try {
   assert.equal(kissed.kiss.target,'bob');assert.equal(kisses.length,1)
   assert((await run({...input,action:'kiss',target:'invalid user name'},dependencies)).error.includes('use /kiss'))
   assert.equal(kisses.length,1)
-  saveCompanion(db,accountId,{character:{id:character.id,png:'invalid'}})
+  for(let level=1;level<=30;level++){
+    const levelFloor=Math.round(30*(level-1)**1.45),nextLevelAt=level===30?levelFloor:Math.round(30*level**1.45)
+    const progress={...character,level,xp:levelFloor,levelFloor,nextLevelAt,evolution:[1,5,10,20,30].filter(gate=>level>=gate).length,maxLevel:30,nextEvolutionLevel:[5,10,20,30].find(gate=>gate>level)??null,canLevelUp:false}
+    saveCompanion(db,accountId,{character:progress})
+    assert.deepEqual(JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get(`character:${accountId}`).value),progress,'All 30 hero levels and evolution metadata reach the companion')
+  }
+  saveCompanion(db,accountId,{character})
+  for(const invalid of [{level:31},{level:0},{xp:-1},{nextLevelAt:-1},{levelFloor:-1},{evolution:6},{maxLevel:5},{nextEvolutionLevel:31}]){
+    assert.throws(()=>saveCompanion(db,accountId,{character:{...character,...invalid}}),/incompatible character/)
+  }
+  assert.throws(()=>saveCompanion(db,accountId,{character:{id:character.id,png:'invalid'}}),/incompatible character/)
+
   assert.deepEqual(JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get(`character:${accountId}`).value),character)
   const playerOf=()=>JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get(`player:${accountId}`)?.value ?? 'undefined')
   saveCompanion(db,accountId,{character:null,player:{handle:'paul_1a2b3c4d',points:1234}})
@@ -228,6 +240,12 @@ try {
   assert.equal(selected.character.heroId,'cash_cow_solopreneur','Preview cannot replace pinned hero')
   assert.deepEqual(evolutions.at(-1),{fromLevel:1,toLevel:3,heroId:'iris_archon'})
   assert((await run({...input,action:'levelup',toLevel:6},dependencies)).error.includes('[1-5]'))
+  character={...character,level:19,evolution:3,xp:2000,nextLevelAt:2500,maxLevel:30}
+  db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
+  const midPreview=await run({...input,action:'levelup'},dependencies)
+  assert.equal(midPreview.error,undefined);assert.equal(midPreview.character.level,19)
+  assert.deepEqual(evolutions.at(-1),{fromLevel:3,toLevel:4},'Artwork previews use the evolution skin rather than the hero level')
+  delete character.evolution
   character={...character,level:1,xp:100,canLevelUp:true,nextLevelAt:100}
   db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
   const earned=await run({...input,action:'evolve',characterId:character.id,level:1},dependencies)
@@ -235,6 +253,12 @@ try {
   assert.equal(earned.levelUp.toLevel,2)
   const retry=await run({...input,action:'evolve',characterId:character.id,level:1},dependencies)
   assert(retry.error);assert.equal(retry.character.level,2,'Stale manual requests never grant another level')
+  character={...character,level:29,evolution:4,xp:3959,nextLevelAt:3959,maxLevel:30,canLevelUp:true}
+  db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)
+  const finalEvolution=await run({...input,action:'evolve',characterId:character.id,level:29},dependencies)
+  assert.equal(finalEvolution.error,undefined);assert.equal(finalEvolution.character.level,30)
+  assert.equal(finalEvolution.character.evolution,5);assert.equal(finalEvolution.levelUp.toLevel,5)
+  assert.equal(finalEvolution.character.canLevelUp,false)
   const beforeAuto=evolutions.length
   character={...character,level:4}
   db.prepare('DELETE FROM metadata WHERE key LIKE ?').run(`heartbeat:${accountId}%`)

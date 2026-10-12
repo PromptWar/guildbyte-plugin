@@ -71,6 +71,20 @@ try{
  assert.equal(values.get('motion').xp,undefined,'XP animation ends without an extra clock')
  await hooks.get('command.run:guildbyte-sync')($);await flush();assert.equal(values.get('motion').xp,undefined,'Unchanged sync never repeats gain animation')
  character={...character,id:'other',xp:500,level:3,nextLevelAt:900};await hooks.get('command.run:guildbyte-sync')($);await flush();assert.equal(values.get('motion').xp,undefined,'Switching heroes never reports their historical XP as a gain')
+ for(const level of [4,9,19,29]){
+  character={...character,level,maxLevel:30,canLevelUp:true}
+  await hooks.get('command.run:guildbyte-sync')($);await flush()
+  const pending=await render()
+  assert(collect(pending,'Button').some(node=>node.props.label==='Level up'),'Ready evolution at hero level '+level+' exposes Level up')
+  assert(collect(pending,'Text').some(node=>node.props.children.startsWith('Lv '+level+' · ')))
+  assert(!collect(pending,'Text').some(node=>node.props.children.includes('MAX')))
+ }
+ character={...character,level:5,maxLevel:30,canLevelUp:false}
+ await hooks.get('command.run:guildbyte-sync')($);await flush()
+ const ordinary=await render();assert(!collect(ordinary,'Button').some(node=>node.props.label==='Level up'),'Ordinary levels need no manual action')
+ character={...character,level:30,maxLevel:30,canLevelUp:false}
+ await hooks.get('command.run:guildbyte-sync')($);await flush()
+ assert(!collect(await render(),'Button').some(node=>node.props.label==='Level up'),'Level 30 has no further evolution')
  const paused=companionActivity(0);paused.start('a',0);paused.snapshot(250);const held=paused.snapshot(500)
  assert.equal(paused.snapshot(10000,12,true,true).offset,held.offset)
  assert(paused.snapshot(10050).offset-held.offset<=.081)

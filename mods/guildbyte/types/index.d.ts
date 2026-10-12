@@ -6,10 +6,11 @@ export type GuildbyteStatus = {
   tokens: number
   prompts: number
   historyComplete: boolean
-  character?: {id:string;heroId?:string;level?:number;xp?:number;nextLevelAt?:number;canLevelUp?:boolean} | null
+  character?: {id:string;heroId?:string;level?:number;xp?:number;levelFloor?:number;nextLevelAt?:number;canLevelUp?:boolean;evolution?:number;maxLevel?:number;nextEvolutionLevel?:number|null} | null
   player?: {handle:string;points:number} | null
   levelUp?: {id:string;heroId:string;version:1;fromLevel:number;toLevel:number;renderScale?:1|1.5;durationMs:number}
   linkUrl?: string
+  busy?: 'sync' | 'connect' | 'evolve'
   error?: string
   kiss?: {id:string;target:string;expiresAt:string}
   visit?: {id:string;name:string;guild:string|null;expiresAt:string;character:NonNullable<GuildbyteStatus['character']>} | null

@@ -8,6 +8,7 @@ const motionKey = { plugin: 'guildbyte', key: 'motion' }
 let options = {}
 let failures = []
 let running = false
+let workerCompletion,buttonAction
 let sessionId
 let timer
 let motionTimer,motionInterval
@@ -115,6 +116,8 @@ async function worker($, action = 'sync', usage,target) {
   if(action==='evolve' && (visitor || levelUp))return {error:'Wait for the current companion animation to finish before evolving.'}
   if (running) return
   running = true
+  let complete
+  workerCompletion=new Promise(resolve=>{complete=resolve})
   try {
     sessionId ??= await $.session.id()
     const sentFailures = failures.slice()
@@ -161,8 +164,25 @@ async function worker($, action = 'sync', usage,target) {
     await $.state.set(statusKey, { ...value, error: String(error.message ?? error) })
   } finally {
     running = false
+    complete()
     await updateMotionTimer($)
     if(!ending)void animate($,lastPose===undefined)
+  }
+}
+
+async function pressAction($,action,target) {
+  if(buttonAction)return
+  buttonAction=action
+  const {value={}}=await $.state.get(statusKey)
+  await $.state.set(statusKey,{...value,busy:action})
+  try {
+    // A manual press must wait for background sync instead of being dropped.
+    if(running)await workerCompletion
+    return await (action==='sync' ? sync($) : worker($,action,undefined,target))
+  } finally {
+    buttonAction=undefined
+    const {value={}}=await $.state.get(statusKey),{busy,...status}=value
+    await $.state.set(statusKey,status)
   }
 }
 
@@ -189,7 +209,7 @@ export function register(on, configuration = {}) {
   options = configuration
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    ending=false;lastInputAt=-Infinity;loading=true;loadingStarted=Date.now();companion=companionPng=pixels=visitor=guestCompanion=visitorPixels=undefined
+    ending=false;buttonAction=undefined;lastInputAt=-Infinity;loading=true;loadingStarted=Date.now();companion=companionPng=pixels=visitor=guestCompanion=visitorPixels=undefined
     activity=companionActivity();lastPose=undefined;currentPose=imageSite=undefined;levelUp=levelUpPixels=xpGain=observedCharacter=undefined;artRevision=visitorArtRevision=undefined
     await $.command.register({ name: 'guildbyte-connect', description: 'Link this Claude account to Guildbyte' })
     await $.command.register({name:'guildbyte-evolve',description:'Evolve the pinned hero when its XP bar is full',immediate:true})
@@ -279,7 +299,7 @@ export function register(on, configuration = {}) {
     const {value:status={}}=await $.state.get(statusKey)
     if(!status.character?.canLevelUp)return {text:'Earn the required XP before leveling up.'}
     const result=await worker($,'evolve',undefined,{characterId:status.character.id,level:status.character.level})
-    return {text:result?.error ?? (result?.levelUp ? `Hero evolved to level ${result.levelUp.toLevel}.` : 'Guildbyte is syncing. Try again in a moment.')}
+    return {text:result?.error ?? (result?.levelUp ? `Hero evolved to level ${result.character.level}.` : 'Guildbyte is syncing. Try again in a moment.')}
   })
   on('command.run',{command:'guildbyte-levelup'},async ($,e)=>{
     const target=e.args?.trim()??''
@@ -287,7 +307,7 @@ export function register(on, configuration = {}) {
     if(visitor)return {text:'Wait for the current kiss visit to finish, then preview level-up.'}
     const status=await worker($,'levelup',undefined,target)
     await animate($,true)
-    return {text:status?.levelUp ? `Gold evolution preview: level ${status.levelUp.fromLevel} → ${status.levelUp.toLevel}. Earned XP is unchanged.` : status?.error??'Guildbyte is syncing. Try again in a moment.'}
+    return {text:status?.levelUp ? `Gold evolution preview: skin ${status.levelUp.fromLevel} → ${status.levelUp.toLevel}. Earned XP is unchanged.` : status?.error??'Guildbyte is syncing. Try again in a moment.'}
   })
   on('command.run',{command:'kiss'},async ($,e)=>{
     const target=e.args?.trim()
@@ -314,10 +334,10 @@ export function register(on, configuration = {}) {
     }
     const width=Math.max(1,e.props.bodyColumns),ornate=(e.props.maxRows ?? 5)>=7 && width>=24,actionRows=ornate ? 3 : 1
     const actions=[]
-    if(status.error && status.connected!==false && Button)actions.push(Button({label:'Retry sync',onPress:()=>{void sync($)}}))
-    if(!status.connected && (!status.error || status.connected===false) && Button)actions.push(Button({label:status.error ? 'Reconnect account' : 'Connect account',onPress:()=>{void worker($,'connect')}}))
-    if(status.connected && status.character?.canLevelUp && status.character.level<5 && !levelUp && !visitor && Button)actions.push(Button({label:'Level up',variant:'primary',onPress:()=>{void worker($,'evolve',undefined,{characterId:status.character.id,level:status.character.level})}}))
-    const progress=actions.length && ornate && status.connected && status.character && Text ? Text({children:status.character.level===5 ? 'Lv 5 · MAX' : `Lv ${status.character.level ?? 1} · ${status.character.xp ?? 0}/${status.character.nextLevelAt ?? 100} XP`,color:'#d7ad64',wrap:'truncate-end'}) : null
+    if(status.error && status.connected!==false && Button)actions.push(Button({key:'Retry sync',label:buttonAction==='sync'?'Syncing…':'Retry sync',hotkey:'r',autoFocus:true,dimColor:Boolean(buttonAction),onPress:()=>{void pressAction($,'sync')}}))
+    if(!status.connected && (!status.error || status.connected===false) && Button)actions.push(Button({key:'Connect account',label:buttonAction==='connect'?'Connecting…':status.error ? 'Reconnect account' : 'Connect account',hotkey:'c',autoFocus:true,dimColor:Boolean(buttonAction),onPress:()=>{void pressAction($,'connect')}}))
+    if(status.connected && status.character?.canLevelUp && status.character.level<(status.character.maxLevel??30) && !levelUp && !visitor && Button)actions.push(Button({key:'Level up',label:buttonAction==='evolve'?'Leveling up…':'Level up',hotkey:'u',autoFocus:true,dimColor:Boolean(buttonAction),onPress:()=>{void pressAction($,'evolve',{characterId:status.character.id,level:status.character.level})}}))
+    const progress=actions.length && ornate && status.connected && status.character && Text ? Text({children:status.character.level>=(status.character.maxLevel??30) ? `Lv ${status.character.level} · MAX` : `Lv ${status.character.level ?? 1} · ${status.character.xp ?? 0}/${status.character.nextLevelAt ?? 100} XP`,color:'#d7ad64',wrap:'truncate-end'}) : null
     const actionBar=actions.length ? Box({key:'actions',height:actionRows,flexDirection:'row',justifyContent:'center',alignItems:'center',gap:1,...(ornate?{borderStyle:'double',borderColor:'#d7ad64',paddingLeft:1,paddingRight:1}:{}),children:actions}) : null
     const centeredActions=actionBar ? Box({key:'action-section',width,height:actionRows+(progress?1:0),flexDirection:'column',alignItems:'center',justifyContent:'center',children:[...(progress?[progress]:[]),actionBar]}) : null
     if(!companionPng && (status.error || !status.connected || !status.character)) {
@@ -325,7 +345,7 @@ export function register(on, configuration = {}) {
       return centeredActions ?? (message ? Box({width,height:1,children:[message]}) : next(e))
     }
     if (!(await showsPictures($))) {
-      const line=status.connected ? Text?.({ children: statusLine(status), dimColor: true, wrap: 'truncate-end' }) : Button?.({ label: 'Connect account', onPress: () => { void worker($, 'connect') } })
+      const line=status.connected ? Text?.({ children: statusLine(status), dimColor: true, wrap: 'truncate-end' }) : Button?.({ key:'Connect account',label:buttonAction==='connect'?'Connecting…':'Connect account',hotkey:'c',autoFocus:true,dimColor:Boolean(buttonAction),onPress:()=>{void pressAction($,'connect')} })
       return centeredActions ?? (line ? Box({width,height:1,children:[line]}) : next(e))
     }
     const { value: savedPose = { frame: 0, offset: 0, facing: 'right', state: 'idle' } } = await $.state.get(motionKey)

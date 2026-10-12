@@ -114,3 +114,39 @@ test('visitors occupy the left zone while actions are centered and the player st
  expect((await ui.find({key:'player'}))?.props.right).toBe(1)
  await ui.unmount()
 })
+
+
+test('manual action shows pending feedback, queues behind sync and blocks duplicate presses',async($,on)=>{
+ const clock=mock.clock(on);mock.env(on,{TERM_PROGRAM:'ghostty'})
+ on('session.start',(_,e)=>({cwd:e.cwd}))
+ on('session.id',()=>({value:'a5928de2-75f4-4e84-bfff-18c392dbaf89'}))
+ on('session.usage',()=>({value:{context:{window:200000},rateLimits:[]}}))
+ on('command.register',()=>({value:undefined}))
+ const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
+ let character={id:'a5928de2-75f4-4e84-bfff-18c392dbaf89',level:9,evolution:2,maxLevel:30,xp:700,nextLevelAt:750,canLevelUp:true,png}
+ const requests:string[]=[]
+ on('process.spawn',async function*(_,e){
+  const input=JSON.parse((e as any).input);requests.push(input.action)
+  if(input.action==='sync')await clock.sleep(1000)
+  if(input.action==='evolve'){
+   expect(input.level).toBe(9);await clock.sleep(1000)
+   character={...character,level:10,evolution:3,canLevelUp:false}
+  }
+  yield{stream:'stdout',text:JSON.stringify({connected:true,character})};return{value:{code:0}}
+ })
+ await $.session.start({surface:'terminal',isInteractive:true,cwd:'/work'}as any)
+ const ui=await $.ui.mount({plugin:'guildbyte',surface:'terminal',component:'AbovePrompt',props:{bodyColumns:120,maxRows:10}}as any)
+ expect((await ui.find({key:'Level up'}))?.props.hotkey).toBe('u')
+ const sync=$.command.run({command:'guildbyte-sync',args:''}as any);await clock.settle()
+ const press=ui.press({key:'Level up'});await clock.settle()
+ expect(await ui.find({type:'Button',text:/Leveling up/})).toBeDefined()
+ await ui.press({key:'Level up'})
+ expect(requests.filter(action=>action==='evolve')).toHaveLength(0)
+ await clock.advance(1000);await sync;await clock.settle()
+ expect(requests.filter(action=>action==='evolve')).toHaveLength(1)
+ expect(await ui.find({type:'Button',text:/Leveling up/})).toBeDefined()
+ await clock.advance(1000);await press
+ expect(await ui.find({key:'Level up'})).toBeUndefined()
+ expect(await ui.find({type:'Button',text:/Leveling up/})).toBeUndefined()
+ await ui.unmount()
+})

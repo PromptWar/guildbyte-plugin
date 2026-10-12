@@ -292,12 +292,16 @@ function validatedCharacter(character) {
       !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(character.png) ||
       !Buffer.from(character.png, 'base64').subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) return null
   const animation = validateAnimation(character.animation)
-  if(character.level!==undefined && (!Number.isInteger(character.level)||character.level<1||character.level>5))return null
-  if(character.xp!==undefined && (!Number.isSafeInteger(character.xp)||character.xp<0||character.xp>1600))return null
+  if(character.level!==undefined && (!Number.isInteger(character.level)||character.level<1||character.level>30))return null
+  if(character.xp!==undefined && (!Number.isSafeInteger(character.xp)||character.xp<0))return null
   if(character.canLevelUp!==undefined && typeof character.canLevelUp!=='boolean')return null
-  if(character.nextLevelAt!==undefined && (!Number.isSafeInteger(character.nextLevelAt)||character.nextLevelAt<100||character.nextLevelAt>1600))return null
+  if(character.nextLevelAt!==undefined && (!Number.isSafeInteger(character.nextLevelAt)||character.nextLevelAt<0))return null
+  if(character.levelFloor!==undefined && (!Number.isSafeInteger(character.levelFloor)||character.levelFloor<0))return null
+  if(character.evolution!==undefined && (!Number.isInteger(character.evolution)||character.evolution<1||character.evolution>5))return null
+  if(character.maxLevel!==undefined && character.maxLevel!==30)return null
+  if(character.nextEvolutionLevel!=null && (!Number.isInteger(character.nextEvolutionLevel)||character.nextEvolutionLevel<1||character.nextEvolutionLevel>30))return null
   if(character.heroId!==undefined && (typeof character.heroId!=='string'||!/^[a-z0-9_]{1,80}$/.test(character.heroId)))return null
-  return { id: character.id, png: character.png, ...(character.xp!==undefined?{xp:character.xp}:{}),...(character.nextLevelAt!==undefined?{nextLevelAt:character.nextLevelAt}:{}),...(character.canLevelUp!==undefined?{canLevelUp:character.canLevelUp}:{}), ...(character.level!==undefined?{level:character.level}:{}), ...(character.heroId?{heroId:character.heroId}:{}), ...(animation ? { animation } : {}) }
+  return { id: character.id, png: character.png, ...(character.xp!==undefined?{xp:character.xp}:{}),...(character.nextLevelAt!==undefined?{nextLevelAt:character.nextLevelAt}:{}),...(character.canLevelUp!==undefined?{canLevelUp:character.canLevelUp}:{}), ...(character.level!==undefined?{level:character.level}:{}), ...(character.heroId?{heroId:character.heroId}:{}), ...(character.levelFloor!==undefined?{levelFloor:character.levelFloor}:{}), ...(character.evolution!==undefined?{evolution:character.evolution}:{}), ...(character.maxLevel!==undefined?{maxLevel:character.maxLevel}:{}), ...(character.nextEvolutionLevel!==undefined?{nextEvolutionLevel:character.nextEvolutionLevel}:{}), ...(animation ? { animation } : {}) }
 }
 
 // A session keeps artwork in memory; unchanged heartbeats carry only metadata.
@@ -313,6 +317,7 @@ function companionArt(character,knownRevision,includeArt) {
 export function saveCompanion(db, accountId, response) {
   if (response.character === null) setMeta(db, `character:${accountId}`, 'null')
   const character=validatedCharacter(response.character)
+  if(response.character!=null && !character)throw Error('Guildbyte: incompatible character payload. Update the plugin and restart Claude.')
   if(character && response.character.animation && !character.animation)throw Error('Guildbyte: incompatible animation payload. Update the plugin and restart Claude.')
   if(character)setMeta(db,`character:${accountId}`,JSON.stringify(character))
   const player=response.player
@@ -438,7 +443,7 @@ export async function run(input, dependencies = {}) {
       const token=db.prepare('SELECT token FROM accounts WHERE id=?').get(account.id)?.token
       if(!token)throw Error('Guildbyte: run /guildbyte-connect before testing level-up.')
       if(!current)throw Error('Guildbyte: open a chest and pin a hero first.')
-      const fromLevel=current.level??1
+      const fromLevel=current.evolution??[1,5,10,20,30].filter(level=>level<=(current.level??1)).length
       const toLevel=input.toLevel??Math.min(5,fromLevel+1)
       if(!Number.isInteger(toLevel)||toLevel<1||toLevel>5)throw Error('Guildbyte: use /guildbyte-levelup [1-5].')
       if(input.heroId!==undefined && (typeof input.heroId!=='string'||!/^[a-z][a-z0-9_]{0,79}$/.test(input.heroId)))throw Error('Guildbyte: use /guildbyte-levelup [1-5] [hero_id].')
