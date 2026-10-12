@@ -1,0 +1,29 @@
+mods/guildbyte/.claude-plugin/plugin.json
+  s_113c423c1030ff::t_e78362b0690fb6 3
+mods/guildbyte/scripts/worker.mjs
+  s_8f3edf86d6b761::t_532f36e3a97d73 295-296,298-302,304,320,446
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e793b5bae9d916821df6a253e017c18ee611df70",
+  "prompts": {},
+  "sessions": {
+    "s_113c423c1030ff": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    },
+    "s_8f3edf86d6b761": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a10394-74d0-71f2-b51a-fca3c40456a3",
+        "model": "unknown"
+      },
+      "human_author": "Gabriel <gabriel@usetandem.ai>"
+    }
+  }
+}
